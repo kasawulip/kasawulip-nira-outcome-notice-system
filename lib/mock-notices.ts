@@ -1,4 +1,28 @@
 import type { NoticeRecord } from "./nira"
+import { serviceName, formatDate, CURRENT_OFFICER } from "./nira"
+import type { PreviewData } from "@/components/notice-preview"
+
+export function noticeToPreview(n: NoticeRecord): PreviewData {
+  const d = new Date(n.dateTime)
+  return {
+    noticeNumber: n.noticeNumber,
+    office: n.office,
+    officer: n.officer,
+    officerTitle: n.officer === CURRENT_OFFICER.name ? CURRENT_OFFICER.title : "Registration Officer",
+    dateLabel: formatDate(n.dateTime),
+    timeLabel: d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+    clientName: n.clientName,
+    phone: n.phone,
+    nin: n.nin,
+    email: n.email,
+    serviceName: serviceName(n.service),
+    reasons: n.reasons,
+    action: n.action,
+    destination: n.destination,
+    timeline: n.timeline,
+    additional: n.additional,
+  }
+}
 
 export interface AuditEntry {
   time: string
