@@ -8,7 +8,6 @@ import {
   Send,
   AlertTriangle,
   BarChart3,
-  Settings,
   LifeBuoy,
   LogOut,
   ChevronsUpDown,
@@ -37,7 +36,6 @@ const NAV = [
   { title: "Delivery Status", href: "/delivery", icon: Send },
   { title: "Cases Requiring Action", href: "/cases", icon: AlertTriangle, badge: "7" },
   { title: "Reports", href: "/reports", icon: BarChart3 },
-  { title: "Administration", href: "/admin", icon: Settings },
 ]
 
 export function AppSidebar() {
@@ -84,7 +82,7 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Help and Support" render={<Link href="/admin" />}>
+            <SidebarMenuButton tooltip="Help and Support">
               <LifeBuoy />
               <span>Help and Support</span>
             </SidebarMenuButton>
