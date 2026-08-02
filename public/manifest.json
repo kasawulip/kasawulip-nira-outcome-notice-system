@@ -1,0 +1,10 @@
+{
+  "name": "NIRA Client Services Outcome Notice System",
+  "short_name": "NIRA Notices",
+  "description": "Internal NIRA service-desk application for issuing Client Services Outcome Notices.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#243b5f",
+  "icons": []
+}
