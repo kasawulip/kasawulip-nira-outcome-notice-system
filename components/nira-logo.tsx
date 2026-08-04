@@ -1,6 +1,7 @@
+import Image from "next/image"
 import { cn } from "@/lib/utils"
 
-// Placeholder for the official NIRA logo/emblem.
+// NIRA fingerprint emblem (Uganda flag colors on a black disc).
 export function NiraLogo({
   className,
   variant = "light",
@@ -11,15 +12,19 @@ export function NiraLogo({
   return (
     <div
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-md border font-serif text-sm font-bold tracking-tight",
-        variant === "light"
-          ? "border-primary-foreground/25 bg-primary-foreground/10 text-primary-foreground"
-          : "border-primary/20 bg-primary text-primary-foreground",
+        "relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full",
+        variant === "light" ? "bg-background ring-2 ring-background/80" : "bg-background ring-1 ring-border",
         className,
       )}
-      aria-hidden="true"
     >
-      NIRA
+      <Image
+        src="/nira-emblem.png"
+        alt="NIRA emblem"
+        fill
+        sizes="48px"
+        className="object-contain p-0.5"
+        priority
+      />
     </div>
   )
 }
