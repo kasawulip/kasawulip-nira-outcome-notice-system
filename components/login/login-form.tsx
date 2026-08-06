@@ -30,9 +30,12 @@ export function LoginForm() {
       return
     }
     setPending(true)
-    // Prototype sign-in: no backend, route straight into the system.
+    // Prototype sign-in: no backend. Usernames containing "admin" get the
+    // administrator workspace; everyone else gets the officer workspace.
+    const role = /admin/i.test(username.trim()) ? "admin" : "officer"
+    if (typeof window !== "undefined") window.localStorage.setItem("nira-role", role)
     setTimeout(() => {
-      toast.success("Signed in successfully")
+      toast.success(role === "admin" ? "Signed in as administrator" : "Signed in successfully")
       router.push("/")
     }, 900)
   }
@@ -86,7 +89,8 @@ export function LoginForm() {
             {pending ? "Signing in\u2026" : "Sign in"}
           </Button>
           <FieldDescription className="text-center">
-            Prototype access — any username and password will sign you in.
+            Prototype access — sign in with any password. Use a username containing
+            &ldquo;admin&rdquo; for the administrator workspace.
           </FieldDescription>
         </Field>
       </FieldGroup>

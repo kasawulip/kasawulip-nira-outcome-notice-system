@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
+  LayoutDashboard,
   FilePlus2,
   ClipboardList,
   Send,
@@ -29,22 +30,40 @@ import {
 } from "@/components/ui/sidebar"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { NiraLogo } from "@/components/nira-logo"
-import { CURRENT_OFFICER } from "@/lib/nira"
+import { useRole, type Role } from "@/components/role-context"
 
-const NAV = [
-  { title: "New Notice", href: "/", icon: FilePlus2 },
-  { title: "Notice Register", href: "/register", icon: ClipboardList },
-  { title: "Delivery Status", href: "/delivery", icon: Send },
-  { title: "Cases Requiring Action", href: "/cases", icon: AlertTriangle, badge: "7" },
-  { title: "Reports", href: "/reports", icon: BarChart3 },
-  { title: "Administration", href: "/admin", icon: Settings },
+interface NavItem {
+  title: string
+  href: string
+  icon: typeof LayoutDashboard
+  badge?: string
+  roles: Role[]
+}
+
+const NAV: NavItem[] = [
+  { title: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["officer", "admin"] },
+  { title: "New Notice", href: "/new-notice", icon: FilePlus2, roles: ["officer"] },
+  { title: "Notice Register", href: "/register", icon: ClipboardList, roles: ["officer", "admin"] },
+  { title: "Delivery Status", href: "/delivery", icon: Send, roles: ["officer", "admin"] },
+  { title: "Cases Requiring Action", href: "/cases", icon: AlertTriangle, badge: "7", roles: ["officer", "admin"] },
+  { title: "Reports", href: "/reports", icon: BarChart3, roles: ["officer", "admin"] },
+  { title: "Administration", href: "/admin", icon: Settings, roles: ["admin"] },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { role, user } = useRole()
+
+  const items = NAV.filter((item) => item.roles.includes(role))
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href)
+
+  function handleLogout() {
+    if (typeof window !== "undefined") window.localStorage.removeItem("nira-role")
+    router.push("/login")
+  }
 
   return (
     <Sidebar collapsible="offcanvas">
@@ -60,10 +79,10 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Operations</SidebarGroupLabel>
+          <SidebarGroupLabel>{role === "admin" ? "Administration" : "Operations"}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV.map((item) => (
+              {items.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     isActive={isActive(item.href)}
@@ -93,20 +112,18 @@ export function AppSidebar() {
             <SidebarMenuButton size="lg" tooltip="Account">
               <Avatar className="size-8 rounded-md">
                 <AvatarFallback className="rounded-md bg-sidebar-accent text-xs text-sidebar-accent-foreground">
-                  {CURRENT_OFFICER.initials}
+                  {user.initials}
                 </AvatarFallback>
               </Avatar>
               <div className="flex min-w-0 flex-col text-left">
-                <span className="truncate text-sm font-medium">{CURRENT_OFFICER.name}</span>
-                <span className="truncate text-xs text-sidebar-foreground/70">
-                  {CURRENT_OFFICER.title}
-                </span>
+                <span className="truncate text-sm font-medium">{user.name}</span>
+                <span className="truncate text-xs text-sidebar-foreground/70">{user.title}</span>
               </div>
               <ChevronsUpDown className="ml-auto size-4 opacity-60" />
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Logout">
+            <SidebarMenuButton tooltip="Logout" onClick={handleLogout}>
               <LogOut />
               <span>Logout</span>
             </SidebarMenuButton>

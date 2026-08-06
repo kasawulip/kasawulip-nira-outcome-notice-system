@@ -311,6 +311,13 @@ export const CURRENT_OFFICER = {
   initials: "PK",
 }
 
+export const CURRENT_ADMIN = {
+  name: "Irene Kagwa",
+  title: "System Administrator",
+  office: "NIRA Headquarters",
+  initials: "IK",
+}
+
 export const COMPLAINTS_CONTACTS = {
   toll: "0800 100 100",
   email: "info@nira.go.ug",

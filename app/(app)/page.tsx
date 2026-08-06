@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
-import { NoticeForm } from "@/components/new-notice/notice-form"
+import { RoleLanding } from "@/components/dashboard/role-landing"
 
 export const metadata: Metadata = {
-  title: "New Notice | NIRA Client Services",
-  description: "Issue a client services outcome notice at the service window.",
+  title: "Dashboard | NIRA Client Services",
+  description: "Your NIRA Client Services Outcome Notice workspace.",
 }
 
-export default function NewNoticePage() {
-  return <NoticeForm />
+export default function DashboardPage() {
+  return <RoleLanding />
 }

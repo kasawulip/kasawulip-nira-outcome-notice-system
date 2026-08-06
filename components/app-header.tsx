@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { Building2, Bell, Wifi, WifiOff, SignalMedium, ChevronDown, User, Check } from "lucide-react"
 
 import { SidebarTrigger } from "@/components/ui/sidebar"
@@ -16,8 +17,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { CURRENT_OFFICER } from "@/lib/nira"
 import { useNetwork, type NetworkState } from "@/components/network-context"
+import { useRole } from "@/components/role-context"
 
 const NET_META: Record<NetworkState, { label: string; icon: typeof Wifi; dot: string; text: string }> = {
   online: { label: "Online", icon: Wifi, dot: "bg-success", text: "text-success" },
@@ -33,8 +34,15 @@ const NOTIFICATIONS = [
 
 export function AppHeader() {
   const { status, setStatus } = useNetwork()
+  const { user } = useRole()
+  const router = useRouter()
   const meta = NET_META[status]
   const NetIcon = meta.icon
+
+  function handleLogout() {
+    if (typeof window !== "undefined") window.localStorage.removeItem("nira-role")
+    router.push("/login")
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-card px-3 md:px-4">
@@ -47,7 +55,7 @@ export function AppHeader() {
         </h1>
         <div className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
           <Building2 className="size-3" aria-hidden="true" />
-          <span>{CURRENT_OFFICER.office}</span>
+          <span>{user.office}</span>
         </div>
       </div>
 
@@ -121,12 +129,12 @@ export function AppHeader() {
               <Button variant="ghost" size="sm" className="gap-2 pl-1.5">
                 <Avatar className="size-7">
                   <AvatarFallback className="bg-primary text-xs text-primary-foreground">
-                    {CURRENT_OFFICER.initials}
+                    {user.initials}
                   </AvatarFallback>
                 </Avatar>
                 <span className="hidden text-left leading-tight lg:flex lg:flex-col">
-                  <span className="text-xs font-medium">{CURRENT_OFFICER.name}</span>
-                  <span className="text-[11px] text-muted-foreground">{CURRENT_OFFICER.title}</span>
+                  <span className="text-xs font-medium">{user.name}</span>
+                  <span className="text-[11px] text-muted-foreground">{user.title}</span>
                 </span>
                 <ChevronDown className="size-3.5 opacity-60" />
               </Button>
@@ -134,8 +142,8 @@ export function AppHeader() {
           />
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="flex flex-col gap-0.5">
-              <span>{CURRENT_OFFICER.name}</span>
-              <span className="text-xs font-normal text-muted-foreground">{CURRENT_OFFICER.office}</span>
+              <span>{user.name}</span>
+              <span className="text-xs font-normal text-muted-foreground">{user.office}</span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem>
@@ -144,7 +152,9 @@ export function AppHeader() {
             </DropdownMenuItem>
             <DropdownMenuItem>Switch office</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive">Logout</DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" onClick={handleLogout}>
+              Logout
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
