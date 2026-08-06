@@ -60,7 +60,7 @@ export function OfficerDashboard() {
             {user.title} &middot; {user.office}
           </p>
         </div>
-        <Button size="lg" className="w-full gap-2 md:w-auto" render={<Link href="/new-notice" />}>
+        <Button size="lg" className="w-full gap-2 md:w-auto" nativeButton={false} render={<Link href="/new-notice" />}>
           <FilePlus2 data-icon="inline-start" />
           Issue new notice
         </Button>
@@ -83,7 +83,7 @@ export function OfficerDashboard() {
               <CardTitle>Cases requiring your action</CardTitle>
               <CardDescription>Outcome notices you issued that are awaiting a next step.</CardDescription>
             </div>
-            <Button variant="ghost" size="sm" className="gap-1.5" render={<Link href="/cases" />}>
+            <Button variant="ghost" size="sm" className="gap-1.5" nativeButton={false} render={<Link href="/cases" />}>
               View all
               <ArrowRight data-icon="inline-end" />
             </Button>
@@ -134,15 +134,15 @@ export function OfficerDashboard() {
               <CardTitle>Quick actions</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              <Button variant="outline" className="justify-start gap-2" render={<Link href="/new-notice" />}>
+              <Button variant="outline" className="justify-start gap-2" nativeButton={false} render={<Link href="/new-notice" />}>
                 <FilePlus2 data-icon="inline-start" />
                 Issue new notice
               </Button>
-              <Button variant="outline" className="justify-start gap-2" render={<Link href="/register" />}>
+              <Button variant="outline" className="justify-start gap-2" nativeButton={false} render={<Link href="/register" />}>
                 <ClipboardList data-icon="inline-start" />
                 Notice register
               </Button>
-              <Button variant="outline" className="justify-start gap-2" render={<Link href="/delivery" />}>
+              <Button variant="outline" className="justify-start gap-2" nativeButton={false} render={<Link href="/delivery" />}>
                 <Send data-icon="inline-start" />
                 Delivery status
               </Button>
