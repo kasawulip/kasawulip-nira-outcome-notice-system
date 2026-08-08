@@ -63,6 +63,8 @@ export function PublicVerify({ token }: { token: string }) {
   const { account } = useSession()
   const notice = findByToken(token)
   const [showFull, setShowFull] = useState(false)
+  // In-flight guard so a double-tap cannot acknowledge (and toast) twice.
+  const [acknowledging, setAcknowledging] = useState(false)
 
   // Record a view the first time an ISSUED notice is opened via its QR.
   useEffect(() => {
@@ -98,7 +100,8 @@ export function PublicVerify({ token }: { token: string }) {
   const preview = noticeToPreview(notice)
 
   async function handleAcknowledge() {
-    if (!account) return
+    if (!account || acknowledging) return
+    setAcknowledging(true)
     acknowledgeReferral(token, {
       office: account.district ?? account.name,
       officer: account.name,
@@ -106,6 +109,8 @@ export function PublicVerify({ token }: { token: string }) {
     toast.success("Referral acknowledged", {
       description: `${notice?.noticeNumber} recorded as received.`,
     })
+    // On success the acknowledge section unmounts; the guard blocks any repeat
+    // trigger that lands before that re-render.
   }
 
   return (
@@ -184,8 +189,12 @@ export function PublicVerify({ token }: { token: string }) {
                       your office.
                     </span>
                   </div>
-                  <Button className="w-full sm:w-auto" onClick={handleAcknowledge}>
-                    <CheckCircle2 data-icon="inline-start" />
+                  <Button className="w-full sm:w-auto" onClick={handleAcknowledge} disabled={acknowledging}>
+                    {acknowledging ? (
+                      <Loader2 data-icon="inline-start" className="animate-spin" />
+                    ) : (
+                      <CheckCircle2 data-icon="inline-start" />
+                    )}
                     Acknowledge Client Referral
                   </Button>
                 </div>

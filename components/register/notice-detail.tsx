@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -102,6 +103,8 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
   const preview = noticeToPreview(notice)
   const audit = auditTrailFor(notice)
   const delivery = deliveryHistoryFor(notice)
+  // In-flight guard so repeated clicks cannot fire multiple concurrent resends.
+  const [resending, setResending] = useState(false)
 
   function copyNumber() {
     navigator.clipboard?.writeText(notice.noticeNumber)
@@ -109,15 +112,18 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
   }
 
   function resendReferral() {
-    if (!notice.referralEmail) return
+    if (!notice.referralEmail || resending) return
+    setResending(true)
     toast.info("Resending referral email…", { description: notice.referralEmail })
-    void sendReferralEmail(notice.id).then((sent) => {
-      if (sent) {
-        toast.success("Referral email delivered", { description: notice.referralEmail })
-      } else {
-        toast.error("Referral email failed again", { description: "Please try once more shortly." })
-      }
-    })
+    void sendReferralEmail(notice.id)
+      .then((sent) => {
+        if (sent) {
+          toast.success("Referral email delivered", { description: notice.referralEmail })
+        } else {
+          toast.error("Referral email failed again", { description: "Please try once more shortly." })
+        }
+      })
+      .finally(() => setResending(false))
   }
 
   return (
@@ -227,9 +233,15 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
                         <span>{notice.referralEmail}</span>
                         <ReferralEmailStatusBadge status={notice.referralEmailStatus} />
                         {notice.referralEmailStatus === "failed" || notice.referralEmailStatus === "pending" ? (
-                          <Button size="sm" variant="outline" className="h-7 gap-1.5" onClick={resendReferral}>
-                            <RefreshCw className="size-3.5" />
-                            Resend
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1.5"
+                            onClick={resendReferral}
+                            disabled={resending}
+                          >
+                            <RefreshCw className={cn("size-3.5", resending && "animate-spin")} />
+                            {resending ? "Resending…" : "Resend"}
                           </Button>
                         ) : null}
                       </span>
