@@ -19,6 +19,7 @@ export function noticeToPreview(n: NoticeRecord): PreviewData {
     reasons: n.reasons,
     action: n.action,
     destination: n.destination,
+    referralEmail: n.referralEmail,
     timeline: n.timeline,
     additional: n.additional,
   }

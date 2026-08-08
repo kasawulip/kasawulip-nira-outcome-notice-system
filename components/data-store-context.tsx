@@ -163,6 +163,30 @@ export function DataStoreProvider({ children }: { children: React.ReactNode }) {
     setChannelSettings((prev) => ({ ...prev, ...patch }))
   }, [])
 
+  const sendReferralEmail = useCallback<DataStoreValue["sendReferralEmail"]>((id) => {
+    // Mark pending immediately so the UI reflects the in-flight attempt.
+    setNotices((prev) => prev.map((n) => (n.id === id ? { ...n, referralEmailStatus: "pending" } : n)))
+    return new Promise<boolean>((resolve) => {
+      setTimeout(() => {
+        // Simulate delivery (~10% transient failure). Failure never loses the
+        // referral record — only the email status is flagged for resend.
+        const success = Math.random() > 0.1
+        setNotices((prev) =>
+          prev.map((n) =>
+            n.id === id
+              ? {
+                  ...n,
+                  referralEmailStatus: success ? "sent" : "failed",
+                  referralEmailSentAt: success ? new Date().toISOString() : n.referralEmailSentAt,
+                }
+              : n,
+          ),
+        )
+        resolve(success)
+      }, 1200)
+    })
+  }, [])
+
   const combined = useMemo(() => [...outbox, ...notices], [outbox, notices])
 
   const value = useMemo<DataStoreValue>(
@@ -177,6 +201,7 @@ export function DataStoreProvider({ children }: { children: React.ReactNode }) {
       resolveCase,
       updateCaseStatus,
       retryDelivery,
+      sendReferralEmail,
       syncOutbox,
       addAccount,
       updateAccount,
@@ -194,6 +219,7 @@ export function DataStoreProvider({ children }: { children: React.ReactNode }) {
       resolveCase,
       updateCaseStatus,
       retryDelivery,
+      sendReferralEmail,
       syncOutbox,
       addAccount,
       updateAccount,

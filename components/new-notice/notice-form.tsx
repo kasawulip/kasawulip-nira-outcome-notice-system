@@ -57,6 +57,7 @@ import {
   DELIVERY_METHODS,
   DESTINATIONS,
   TIMELINES,
+  DISTRICTS,
   ALL_DISTRICTS,
   REFERRAL_DISTRICT_DESTINATION,
   REFERRAL_HQ_DESTINATION,
@@ -85,7 +86,7 @@ interface LastValues {
 export function NoticeForm() {
   const { status: network, isOnline } = useNetwork()
   const { account } = useSession()
-  const { issueNotice: persistNotice, channelSettings } = useDataStore()
+  const { issueNotice: persistNotice, channelSettings, sendReferralEmail: dispatchReferralEmail } = useDataStore()
 
   const isAdmin = account?.role === "systems-admin"
   const fixedOffice = account && account.district !== ALL_DISTRICTS ? account.district : ""
@@ -427,13 +428,9 @@ export function NoticeForm() {
     const isHqReferral = destination === REFERRAL_HQ_DESTINATION
     const hqDept = isHqReferral ? hqDepartmentById(referralDepartmentId) : undefined
     const activeReferralEmail = isHqReferral ? referralEmail || hqDept?.email : undefined
-    // HQ referrals must email the receiving department; start as pending so it
-    // can be flipped to sent/failed after the delivery attempt.
-    const referralEmailStatus: ReferralEmailStatus = activeReferralEmail
-      ? online
-        ? "pending"
-        : "pending"
-      : "not-required"
+    // HQ referrals must email the receiving department; start as pending so the
+    // status can be flipped to sent/failed after the delivery attempt.
+    const referralEmailStatus: ReferralEmailStatus = activeReferralEmail ? "pending" : "not-required"
 
     const record: NoticeRecord = {
       id:
@@ -481,8 +478,17 @@ export function NoticeForm() {
         toast.success("Notice issued — delivery confirming in the background")
       }
       // Save the referral first (done above), then attempt the department email.
+      // Email failure never loses the referral — it is flagged for later resend.
       if (activeReferralEmail && !queued) {
-        sendReferralEmail(record.id, record.noticeNumber, activeReferralEmail)
+        void dispatchReferralEmail(record.id).then((sent) => {
+          if (sent) {
+            toast.success("Referral emailed to receiving department", { description: activeReferralEmail })
+          } else {
+            toast.error("Referral email delivery failed", {
+              description: "Flagged as pending — resend it from the register.",
+            })
+          }
+        })
       }
       setIssued({ data: buildPreview(noticeNumber), deliveryMethod, queued })
     }, 900)

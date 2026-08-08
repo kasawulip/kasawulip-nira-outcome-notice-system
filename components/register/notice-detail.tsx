@@ -30,7 +30,9 @@ import {
   formatDate,
   maskNin,
   type NoticeRecord,
+  type ReferralEmailStatus,
 } from "@/lib/nira"
+import { cn } from "@/lib/utils"
 import {
   noticeToPreview,
   auditTrailFor,
@@ -49,6 +51,21 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
+function ReferralEmailStatusBadge({ status }: { status?: ReferralEmailStatus }) {
+  const map: Record<ReferralEmailStatus, { label: string; className: string }> = {
+    "not-required": { label: "Not required", className: "bg-muted text-muted-foreground" },
+    pending: { label: "Delivery pending", className: "bg-warning/15 text-warning-foreground border border-warning/40" },
+    sent: { label: "Delivered", className: "bg-success/15 text-success border border-success/40" },
+    failed: { label: "Delivery failed", className: "bg-destructive/10 text-destructive border border-destructive/30" },
+  }
+  const s = map[status ?? "not-required"]
+  return (
+    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", s.className)}>
+      {s.label}
+    </span>
+  )
+}
+
 const CHANNEL_ICON = {
   SMS: MessageSquare,
   Email: Mail,
@@ -56,7 +73,7 @@ const CHANNEL_ICON = {
 } as const
 
 export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
-  const { updateCaseStatus } = useDataStore()
+  const { updateCaseStatus, sendReferralEmail } = useDataStore()
   const caseStatus = notice.caseStatus
   const preview = noticeToPreview(notice)
   const audit = auditTrailFor(notice)
@@ -65,6 +82,18 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
   function copyNumber() {
     navigator.clipboard?.writeText(notice.noticeNumber)
     toast.success("Notice number copied", { description: notice.noticeNumber })
+  }
+
+  function resendReferral() {
+    if (!notice.referralEmail) return
+    toast.info("Resending referral email…", { description: notice.referralEmail })
+    void sendReferralEmail(notice.id).then((sent) => {
+      if (sent) {
+        toast.success("Referral email delivered", { description: notice.referralEmail })
+      } else {
+        toast.error("Referral email failed again", { description: "Please try once more shortly." })
+      }
+    })
   }
 
   return (
@@ -153,6 +182,20 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
                   </InfoRow>
                   <InfoRow label="Action required">{notice.action}</InfoRow>
                   <InfoRow label="Where to go next">{notice.destination}</InfoRow>
+                  {notice.referralEmail ? (
+                    <InfoRow label="Referral email">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span>{notice.referralEmail}</span>
+                        <ReferralEmailStatusBadge status={notice.referralEmailStatus} />
+                        {notice.referralEmailStatus === "failed" || notice.referralEmailStatus === "pending" ? (
+                          <Button size="sm" variant="outline" className="h-7 gap-1.5" onClick={resendReferral}>
+                            <RefreshCw className="size-3.5" />
+                            Resend
+                          </Button>
+                        ) : null}
+                      </span>
+                    </InfoRow>
+                  ) : null}
                   <InfoRow label="Expected timeline">{notice.timeline}</InfoRow>
                   {notice.additional ? <InfoRow label="Additional details">{notice.additional}</InfoRow> : null}
                 </CardContent>
