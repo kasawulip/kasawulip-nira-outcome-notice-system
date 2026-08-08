@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/page-header"
 import { DeliveryMonitor } from "@/components/delivery/delivery-monitor"
 
 export const metadata: Metadata = {
-  title: "Delivery Status | NIRA Outcome Notices",
+  title: "Delivery Status | Central Region Outcome Notices",
 }
 
 export default function DeliveryPage() {

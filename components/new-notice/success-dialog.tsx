@@ -115,7 +115,7 @@ export function SuccessDialog({
       if (typeof navigator.share === "function" && nav.canShare?.({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: `NIRA Notice ${data.noticeNumber}`,
+          title: `Central Region Notice ${data.noticeNumber}`,
           text: "Present this QR code at the NIRA office you have been referred to.",
         })
       } else {

@@ -533,7 +533,7 @@ export function NoticeForm() {
 
   const previewNumberRef = useRef<string>("")
   const openPreview = () => {
-    if (!previewNumberRef.current) previewNumberRef.current = "NIRA-DRAFT-PREVIEW"
+    if (!previewNumberRef.current) previewNumberRef.current = "CR-DRAFT-PREVIEW"
     setPreviewOpen(true)
   }
 
@@ -663,7 +663,7 @@ export function NoticeForm() {
     resetForm()
   }
 
-  const previewData = buildPreview(previewNumberRef.current || "NIRA-DRAFT-PREVIEW")
+    const previewData = buildPreview(previewNumberRef.current || "CR-DRAFT-PREVIEW")
 
   if (!account) return null
 

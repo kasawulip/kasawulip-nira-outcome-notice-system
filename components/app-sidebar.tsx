@@ -49,7 +49,7 @@ export function AppSidebar() {
         <div className="flex items-center gap-3 px-1 py-2">
           <NiraLogo />
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-semibold text-sidebar-foreground">NIRA</span>
+            <span className="truncate text-sm font-semibold text-sidebar-foreground">Central Region</span>
             <span className="truncate text-xs text-sidebar-foreground/70">Outcome Notices</span>
           </div>
         </div>

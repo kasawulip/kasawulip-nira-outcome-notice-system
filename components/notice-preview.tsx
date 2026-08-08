@@ -42,7 +42,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
-// A one-page A4 reproduction of the official NIRA Client Services Outcome Notice.
+// A one-page A4 reproduction of the Central Region Client Services Outcome Notice (pilot/study).
 export function NoticePreview({ data }: { data: PreviewData }) {
   return (
     <div className="mx-auto w-full max-w-[820px] bg-card p-6 text-foreground shadow-sm sm:p-10">
@@ -52,9 +52,9 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           <NiraLogo variant="dark" className="size-12 text-base" />
           <div className="flex flex-col">
             <span className="font-serif text-base font-bold leading-tight text-primary sm:text-lg">
-              National Identification and Registration Authority
+              Central Region
             </span>
-            <span className="text-xs text-muted-foreground">Republic of Uganda</span>
+            <span className="text-xs text-muted-foreground">Client Services · Pilot / Study System</span>
           </div>
         </div>
         {data.verifyUrl ? (

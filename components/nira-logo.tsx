@@ -19,7 +19,7 @@ export function NiraLogo({
     >
       <Image
         src="/nira-emblem.png"
-        alt="NIRA emblem"
+        alt="Central Region emblem"
         fill
         sizes="48px"
         className="object-contain p-0.5"

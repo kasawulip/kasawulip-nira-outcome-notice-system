@@ -116,7 +116,7 @@ export function PublicVerify({ token }: { token: string }) {
           <NiraLogo variant="dark" className="size-11" />
           <div className="flex flex-col">
             <span className="font-serif text-base font-bold leading-tight">
-              National Identification and Registration Authority
+              Central Region
             </span>
             <span className="text-xs text-primary-foreground/70">Client Services Outcome Notice · Verification</span>
           </div>
@@ -194,7 +194,7 @@ export function PublicVerify({ token }: { token: string }) {
           )
         ) : (
           <p className="px-1 text-center text-xs text-muted-foreground">
-            A receiving NIRA officer can sign in to acknowledge this referral and view full client details.
+            A receiving officer can sign in to acknowledge this referral and view full client details.
           </p>
         )}
 
@@ -206,7 +206,7 @@ export function PublicVerify({ token }: { token: string }) {
         ) : null}
 
         <p className="px-1 text-center text-[11px] leading-relaxed text-muted-foreground">
-          This page confirms a genuine NIRA referral. Sensitive client details are masked and never encoded in
+          This page confirms a genuine Central Region referral. Sensitive client details are masked and never encoded in
           the QR code. Retain the QR image or a printout to present at the receiving office.
         </p>
       </main>

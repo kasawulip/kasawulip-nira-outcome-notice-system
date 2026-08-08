@@ -87,7 +87,7 @@ export function ReportsDashboard() {
     }
     exportReportPdf(
       stats,
-      { scopeLabel, serviceFilter: serviceLabel, generatedBy: account?.name ?? "NIRA Officer" },
+      { scopeLabel, serviceFilter: serviceLabel, generatedBy: account?.name ?? "Central Region Officer" },
       `nira-report-${timestampSlug()}.pdf`,
     )
     toast.success("PDF report generated.")

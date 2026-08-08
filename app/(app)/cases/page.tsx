@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/page-header"
 import { CasesBoard } from "@/components/cases/cases-board"
 
 export const metadata: Metadata = {
-  title: "Cases Requiring Action | NIRA Outcome Notices",
+  title: "Cases Requiring Action | Central Region Outcome Notices",
 }
 
 export default function CasesPage() {

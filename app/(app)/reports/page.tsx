@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/page-header"
 import { ReportsDashboard } from "@/components/reports/reports-dashboard"
 
 export const metadata: Metadata = {
-  title: "Reports | NIRA Outcome Notices",
+  title: "Reports | Central Region Outcome Notices",
 }
 
 export default function ReportsPage() {

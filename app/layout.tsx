@@ -19,9 +19,9 @@ const sourceSerif = Source_Serif_4({
 })
 
 export const metadata: Metadata = {
-  title: 'Client Services Outcome Notice System | NIRA',
+  title: 'Client Services Outcome Notice System | Central Region',
   description:
-    'Internal NIRA service-desk application for issuing Client Services Outcome Notices when a requested service cannot be completed during a client visit.',
+    'Central Region service-desk application (pilot/study) for issuing Client Services Outcome Notices when a requested service cannot be completed during a client visit.',
   generator: 'v0.app',
   manifest: '/manifest.json',
 }

@@ -380,7 +380,7 @@ export function generateNoticeNumber(office = "Makindye District Office"): strin
     d.getDate(),
   ).padStart(2, "0")}`
   const seq = String(Math.floor(400 + Math.random() * 500)).padStart(5, "0")
-  return `NIRA-${code}-${stamp}-${seq}`
+  return `CR-${code}-${stamp}-${seq}`
 }
 
 /**

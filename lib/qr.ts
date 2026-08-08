@@ -24,7 +24,7 @@ export async function qrDataUrl(
 
 /**
  * Build a clean, brandable "share card" image (PNG data URL) that an officer can
- * save or send to a client. Contains NIRA branding, the QR code, the notice
+ * save or send to a client. Contains Central Region branding, the QR code, the notice
  * number, a minimal client name, the referral destination, and a short
  * instruction — never the client's NIN, phone, or application number.
  */
@@ -53,11 +53,11 @@ export async function buildShareCard(input: {
   ctx.fillStyle = "#ffffff"
   ctx.textAlign = "center"
   ctx.font = "bold 52px Arial, sans-serif"
-  ctx.fillText("NIRA", W / 2, 90)
+  ctx.fillText("Central Region", W / 2, 90)
   ctx.font = "600 30px Arial, sans-serif"
   ctx.fillText("Client Services Outcome Notice", W / 2, 140)
   ctx.font = "400 24px Arial, sans-serif"
-  ctx.fillText("Republic of Uganda", W / 2, 180)
+  ctx.fillText("Pilot / Study System", W / 2, 180)
 
   // QR code (centered)
   const qr = await qrDataUrl(input.verifyUrl, { size: 720, margin: 2 })
