@@ -4,7 +4,7 @@ import { use } from "react"
 import Link from "next/link"
 import { ArrowLeft, SearchX } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { NoticeDetail } from "@/components/register/notice-detail"
 import { useScopedNotices } from "@/components/data-store-context"
@@ -34,9 +34,9 @@ export default function NoticeDetailPage({ params }: { params: Promise<{ id: str
               This notice does not exist, or it belongs to a district outside your access.
             </EmptyDescription>
           </EmptyHeader>
-          <Button asChild variant="outline" className="mt-2">
-            <Link href="/register">Return to register</Link>
-          </Button>
+          <Link href="/register" className={buttonVariants({ variant: "outline", className: "mt-2" })}>
+            Return to register
+          </Link>
         </Empty>
       </div>
     )

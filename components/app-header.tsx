@@ -101,9 +101,9 @@ export function AppHeader() {
             }
           />
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Connection (demo control)</DropdownMenuLabel>
-            <DropdownMenuSeparator />
             <DropdownMenuGroup>
+              <DropdownMenuLabel>Connection (demo control)</DropdownMenuLabel>
+              <DropdownMenuSeparator />
               {OVERRIDE_OPTIONS.map((opt) => {
                 const Icon = opt.icon
                 return (
@@ -137,17 +137,19 @@ export function AppHeader() {
             }
           />
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="flex flex-col gap-0.5">
-              <span>{account?.name}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                {role ? ROLE_LABEL[role] : ""} · {account?.district}
-              </span>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={handleSignOut}>
-              <LogOut className="size-4" />
-              Sign out
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="flex flex-col gap-0.5">
+                <span>{account?.name}</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  {role ? ROLE_LABEL[role] : ""} · {account?.district}
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={handleSignOut}>
+                <LogOut className="size-4" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

@@ -301,7 +301,7 @@ export function AdminPanel() {
                   {newRole === "district-staff" ? (
                     <Field>
                       <FieldLabel>Assigned district</FieldLabel>
-                      <Select value={newDistrict} onValueChange={setNewDistrict}>
+                      <Select value={newDistrict} onValueChange={(v) => setNewDistrict(v ?? newDistrict)}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>

@@ -17,7 +17,7 @@ export default function RegisterPage() {
 
   const delivered = notices.filter((n) => n.smsStatus === "Delivered").length
   const pending = notices.filter(
-    (n) => n.smsStatus === "Sending" || n.smsStatus === "Queued" || n.smsStatus === "Pending",
+    (n) => n.smsStatus === "Queued" || n.smsStatus === "Pending" || n.smsStatus === "Sent",
   ).length
   const failed = notices.filter((n) => n.smsStatus === "Failed" || n.emailStatus === "Failed").length
 

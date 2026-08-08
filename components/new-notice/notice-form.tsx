@@ -381,7 +381,10 @@ export function NoticeForm() {
     setLastValues({ reasons, destination })
 
     const record: NoticeRecord = {
-      id: `n-${Date.now()}`,
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? `n-${crypto.randomUUID()}`
+          : `n-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       noticeNumber,
       dateTime: new Date().toISOString(),
       clientName: name,
@@ -459,7 +462,7 @@ export function NoticeForm() {
       </div>
 
       {network === "offline" ? (
-        <Alert variant="warning">
+        <Alert className="border-warning/40 bg-warning/10 text-foreground [&>svg]:text-warning">
           <Info />
           <AlertTitle>You are offline</AlertTitle>
           <AlertDescription>
@@ -721,7 +724,7 @@ export function NoticeForm() {
             />
             {destination === "Another NIRA office" ? (
               <div className="mt-2">
-                <Select value={destinationOffice} onValueChange={setDestinationOffice}>
+                <Select value={destinationOffice} onValueChange={(v) => setDestinationOffice(v ?? "")}>
                   <SelectTrigger className="h-11 w-full sm:w-80">
                     <SelectValue placeholder="Search and select the office" />
                   </SelectTrigger>
@@ -781,7 +784,7 @@ export function NoticeForm() {
                   value={timelineNum}
                   onChange={(e) => setTimelineNum(e.target.value)}
                 />
-                <Select value={timelineUnit} onValueChange={setTimelineUnit}>
+                <Select value={timelineUnit} onValueChange={(v) => setTimelineUnit(v ?? timelineUnit)}>
                   <SelectTrigger className="h-11 w-40">
                     <SelectValue />
                   </SelectTrigger>
