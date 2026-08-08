@@ -14,6 +14,9 @@ import {
   FileText,
   Clock,
   ShieldCheck,
+  QrCode as QrCodeIcon,
+  Copy as CopyIcon,
+  ExternalLink,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -22,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
 import { NoticePreview } from "@/components/notice-preview"
+import { QRCode } from "@/components/qr-code"
 import { CaseStatusBadge, DeliveryStatusBadge, PriorityBadge } from "@/components/status-badge"
 import { ServiceIcon } from "@/components/service-icon"
 import {
@@ -29,8 +33,11 @@ import {
   formatDateTime,
   formatDate,
   maskNin,
+  isNoticeValid,
+  noticeVerifyUrl,
   type NoticeRecord,
   type ReferralEmailStatus,
+  type TrackingStatus,
 } from "@/lib/nira"
 import { cn } from "@/lib/utils"
 import {
@@ -62,6 +69,23 @@ function ReferralEmailStatusBadge({ status }: { status?: ReferralEmailStatus }) 
   return (
     <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", s.className)}>
       {s.label}
+    </span>
+  )
+}
+
+function TrackingStatusBadge({ status }: { status?: TrackingStatus }) {
+  const s = status ?? "ISSUED"
+  const valid = isNoticeValid(s)
+  const tone = !valid
+    ? "bg-destructive/10 text-destructive border border-destructive/30"
+    : s === "ISSUED"
+      ? "bg-secondary text-secondary-foreground"
+      : s === "VIEWED"
+        ? "bg-warning/15 text-warning-foreground border border-warning/40"
+        : "bg-primary/10 text-primary border border-primary/30"
+  return (
+    <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold", tone)}>
+      {s}
     </span>
   )
 }
@@ -288,6 +312,66 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
 
         {/* Right: summary + case management */}
         <div className="flex flex-col gap-6">
+          {notice.retrievalToken ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <QrCodeIcon className="size-4 text-muted-foreground" />
+                  Referral QR &amp; tracking
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4 pt-0">
+                <div className="flex items-center gap-4">
+                  <QRCode value={noticeVerifyUrl(notice.retrievalToken)} size={104} className="shrink-0" />
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Tracking status
+                    </span>
+                    <TrackingStatusBadge status={notice.trackingStatus} />
+                    <span className="text-xs text-muted-foreground">
+                      {isNoticeValid(notice.trackingStatus)
+                        ? "Valid until closed or cancelled — never expires on a timer."
+                        : "This referral is no longer active."}
+                    </span>
+                  </div>
+                </div>
+                {notice.viewedAt ? (
+                  <p className="text-xs text-muted-foreground">First scanned {formatDateTime(notice.viewedAt)}</p>
+                ) : null}
+                {notice.acknowledgedAt ? (
+                  <div className="flex items-start gap-2 rounded-lg bg-primary/5 p-2.5 text-xs">
+                    <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    <span className="text-muted-foreground">
+                      Received by {notice.acknowledgedByOfficer} · {notice.acknowledgedByOffice} ·{" "}
+                      {formatDateTime(notice.acknowledgedAt)}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(noticeVerifyUrl(notice.retrievalToken!))
+                      toast.success("Verification link copied")
+                    }}
+                  >
+                    <CopyIcon data-icon="inline-start" />
+                    Copy link
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open(noticeVerifyUrl(notice.retrievalToken!), "_blank", "noreferrer")}
+                  >
+                    <ExternalLink data-icon="inline-start" />
+                    Open verify page
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
