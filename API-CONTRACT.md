@@ -291,7 +291,7 @@ These endpoints back that page (see §10 for the full model).
 
 ### Notice numbers
 - Server-generated, sequential **per office per year**, never reused.
-- Format follows the current frontend convention: `NIRA-<OFFICE_CODE>-<YYYYMMDD>-<SEQ>` (e.g. `NIRA-WAK-20260808-00417`). Office codes: `MAK, KLA, WAK, MUK, HQ, ...` from Office master data.
+- Format follows the current frontend convention: `CR-<OFFICE_CODE>-<YYYYMMDD>-<SEQ>` (e.g. `CR-WAK-20260808-00417`). Office codes: `MAK, KLA, WAK, MUK, HQ, ...` from Office master data. (The `CR` prefix = "Central Region", the pilot/study system name. Any pre-existing records carrying the legacy `NIRA-` prefix keep their original numbers — numbers are immutable once issued; only newly generated numbers use `CR-`.)
 
 ### Issue flow (`POST /notices`) — order matters
 1. Validate payload (§6). Reject referral to an office with no `officialEmail`.
@@ -310,7 +310,7 @@ Notice Number · Client Full Name · NIN/Application Number · Client Phone · R
 
 Subject line for card-collection referrals:
 ```
-NIRA Card Collection Referral – [NOTICE NUMBER] – [CLIENT NAME] – Batch [BATCH NUMBER]
+Central Region Card Collection Referral – [NOTICE NUMBER] – [CLIENT NAME] – Batch [BATCH NUMBER]
 ```
 
 ### Card-collection PDF (service `"collection"`)
