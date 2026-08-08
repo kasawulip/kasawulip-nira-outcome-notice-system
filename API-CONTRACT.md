@@ -103,6 +103,16 @@ Role = "district-staff" | "systems-admin"
   // --- Offline / sync metadata ---
   syncState?: "synced" | "queued"
   createdOffline?: boolean
+
+  // --- QR retrieval & referral tracking (§10) ---
+  // The token is a long, random, NON-SEQUENTIAL string embedded in the QR URL —
+  // never the client's PII, never the notice number. Generated server-side at issue.
+  retrievalToken?: string       // e.g. 32-char base62 (~190 bits)
+  trackingStatus?: TrackingStatus  // enum §3 — physical journey of the referral
+  viewedAt?: string             // ISO — first time the public verify page was opened
+  acknowledgedAt?: string       // ISO — when a receiving officer acknowledged
+  acknowledgedByOffice?: string // snapshot of the acknowledging officer's office
+  acknowledgedByOfficer?: string
 }
 ```
 
@@ -182,6 +192,11 @@ ReferralLocationType = "DISTRICT_OFFICE" | "HEADQUARTERS" | "OTHER"
 CardLocationType     = "DISTRICT_OFFICE" | "LOCAL_OUTREACH"
 ReferralEmailStatus  = "not-required" | "pending" | "sent" | "failed"
 
+// QR referral tracking lifecycle (distinct from CaseStatus — see §10).
+// A referral NEVER expires on a timer; it stays valid until CLOSED or CANCELLED.
+TrackingStatus =
+  "ISSUED" | "VIEWED" | "RECEIVED AT DESTINATION" | "ACTIONED" | "CLOSED" | "CANCELLED"
+
 DESTINATIONS = [
   "Return to this office", "Another NIRA District Office", "NIRA Headquarters",
   "Health facility", "Local Council", "Police", "Court",
@@ -238,6 +253,18 @@ CARD_AT_OUTREACH_REASON = "Card is available at another NIRA outreach/service st
 - `GET /notices/:id/pdf` — returns the generated outcome-notice PDF (`application/pdf`). See §5 for required PDF content.
 - `POST /sync/outbox` — accept a batch of notices created offline: body `{ notices: Notice[] }`. **Idempotent by client-supplied `id`** (do not duplicate). Returns `{ accepted: string[], queued: string[], rejected: {id,reason}[] }`, and each accepted notice comes back with `syncState: "synced"`.
 
+### QR verification (public + receiving-officer)
+
+The QR embedded in every notice/PDF encodes the absolute URL `<APP_ORIGIN>/notice/:token`.
+These endpoints back that page (see §10 for the full model).
+
+- `GET /notice/verify/:token` — **public, no auth**. Look up the notice by `retrievalToken`. Returns a **masked** public summary only:
+  `{ noticeNumber, dateTime, service, serviceName, destination, office, trackingStatus, valid: boolean, acknowledgedAt?, acknowledgedByOffice?, acknowledgedByOfficer? }`.
+  Side effect: if `trackingStatus === "ISSUED"`, advance it to `"VIEWED"` and set `viewedAt` (idempotent — never regress a further-along referral). `valid` is `false` when status is `CLOSED`/`CANCELLED`. Returns `404` for an unknown token; do **not** leak whether a token "used to exist."
+- `GET /notice/verify/:token/full` — returns the full notice for rendering the immutable notice/PDF view. Public read of the referral document; still masks `nin`/`phone` in the summary fields per §5. (Or require a lightweight receiving-officer session if you prefer stricter privacy — the frontend supports both a public summary and an authenticated full view.)
+- `GET /notice/verify/:token/pdf` — the generated PDF for this token (`application/pdf`); same content as `GET /notices/:id/pdf`.
+- `POST /notice/verify/:token/acknowledge` — **authenticated receiving officer**. Body `{ office, officer }` (or derive from the session). Advances `trackingStatus` to `"RECEIVED AT DESTINATION"`, sets `acknowledgedAt`, `acknowledgedByOffice`, `acknowledgedByOfficer`; writes an audit event. Rejected when the referral is not `valid` (already `CLOSED`/`CANCELLED`). Returns the updated public summary.
+
 ### Master data
 
 - `GET /offices`, `GET /offices/:id`
@@ -255,7 +282,8 @@ CARD_AT_OUTREACH_REASON = "Card is available at another NIRA outreach/service st
 
 > These map 1:1 to the current frontend store methods: `issueNotice`, `resolveCase`,
 > `updateCaseStatus`, `retryDelivery`, `sendReferralEmail`, `syncOutbox`, `addAccount`,
-> `updateAccount`, `toggleAccountActive`, `updateChannelSettings`.
+> `updateAccount`, `toggleAccountActive`, `updateChannelSettings`, and the QR methods
+> `findByToken`, `recordView`, `acknowledgeReferral`, `updateTrackingStatus` (→ §10).
 
 ---
 
@@ -267,7 +295,7 @@ CARD_AT_OUTREACH_REASON = "Card is available at another NIRA outreach/service st
 
 ### Issue flow (`POST /notices`) — order matters
 1. Validate payload (§6). Reject referral to an office with no `officialEmail`.
-2. **Save the notice first** and generate `noticeNumber`.
+2. **Save the notice first** and generate `noticeNumber`, a secure random `retrievalToken`, and set `trackingStatus = "ISSUED"`.
 3. Snapshot referral master data onto the record:
    - District card path → `cardLocationText = "NIRA <name> District Office"`, `receivingOfficeEmail = office.officialEmail`, `cardBatchNumber`.
    - Outreach card path → `cardLocationText = <free-text location>`, `outreachContactStaffName` (+ optional phone), `cardBatchNumber`.
@@ -289,6 +317,12 @@ NIRA Card Collection Referral – [NOTICE NUMBER] – [CLIENT NAME] – Batch [B
 Must state the **exact** card location, batch number, and either the receiving
 office email (district path) or the contact staff member (outreach path), plus the
 next-step action. Never render a vague "go to another NIRA office."
+
+### QR on every notice/PDF
+Every generated notice and PDF embeds a scannable QR encoding `<APP_ORIGIN>/notice/:token`,
+alongside a human-readable fallback (Notice Number + destination) so the referral can
+be verified from a printout, screenshot, or phone screen even with no email/SMS/internet
+for the client. The PDF is **immutable** once issued. See §10.
 
 ### PII
 - Store `nin` and `phone` in full. Provide masked forms in list/summary responses
@@ -325,6 +359,7 @@ next-step action. Never render a vague "go to another NIRA office."
 - `JWT_SECRET`
 - `EMAIL_PROVIDER_API_KEY` / SMTP settings
 - `EMAIL_FROM_ADDRESS`
+- `APP_ORIGIN` — public origin used to build QR verification URLs (`<APP_ORIGIN>/notice/:token`)
 - (optional) `SMS_GATEWAY_*`
 
 ---
@@ -334,3 +369,59 @@ The frontend currently persists to `localStorage` via `DataStoreContext`. Once t
 API exists, those calls are swapped for `fetch`/SWR against `NEXT_PUBLIC_API_BASE_URL`
 using the identical field names above, so component code does not change. Keep the
 response contract byte-for-byte aligned with the type blocks in §2–§3.
+
+---
+
+## 10. QR retrieval & referral tracking
+
+Every issued notice must exist centrally, carry a unique Notice Number, generate an
+**immutable** PDF, and generate a **secure QR** through which an authorised receiving
+officer can retrieve and verify the original referral. A Client Services Outcome Notice
+must never depend on the client owning an email address, having active SMS, or having
+internet connectivity.
+
+### Validity — no timed expiry
+- The QR / referral does **NOT** expire after hours or days; clients may reasonably
+  take time before reporting to the referred office.
+- It stays valid until the notice is `CLOSED`, `CANCELLED`, or administratively
+  archived under the organisation's records-retention policy.
+- Expose validity as a boolean derived server-side: `valid = trackingStatus ∉ {CLOSED, CANCELLED}`.
+
+### Retrieval token
+- Long, random, **non-sequential** (≈32 base62 chars / ~190 bits). Generated server-side at issue.
+- Must be unguessable — a notice must not be discoverable by incrementing a URL value
+  or guessing notice numbers. The token, not the notice number, keys the public lookup.
+- The QR encodes the absolute URL `<APP_ORIGIN>/notice/:token`.
+
+### Tracking lifecycle (`TrackingStatus`, distinct from `CaseStatus`)
+`CaseStatus` = internal NIRA workflow. `TrackingStatus` = the physical journey of the referral:
+
+```
+ISSUED  → set at issue.
+VIEWED  → first time the public verify page is opened (GET /notice/verify/:token).
+RECEIVED AT DESTINATION → a receiving officer acknowledges (POST .../acknowledge).
+ACTIONED → optional: receiving office completed the service.
+CLOSED / CANCELLED → terminal; referral no longer valid.
+```
+Transitions only move **forward** — `recordView` must not regress a referral already
+past `ISSUED`; `updateTrackingStatus` (officer/admin) may set later stages incl. terminal.
+
+### Two-level privacy on the public page
+- **Public summary** (`GET /notice/verify/:token`): masked, minimal — Notice Number,
+  office, issue date, service, destination, tracking status + validity, and any
+  acknowledgement attribution. Enough to confirm authenticity, no sensitive PII.
+- **Full view / PDF** (`.../full`, `.../pdf`): the complete referral document for the
+  receiving officer, with `nin`/`phone` masked per §5.
+- **Acknowledge** (`.../acknowledge`): authenticated receiving officer only; records
+  who received it, which office, and when, and advances tracking to
+  `RECEIVED AT DESTINATION`.
+
+### Audit
+Log view, acknowledgement, and every tracking-status change as `AuditEvent`s
+(`action`, `fromValue`/`toValue`, `actorId`, `timestamp`).
+
+> Frontend surfaces backed by this: success screen QR + share card, the immutable
+> `NoticePreview`/PDF QR block, the public `/notice/[token]` page (View Full Notice,
+> Download PDF, Acknowledge Referral), and the officer register-detail "Referral QR &
+> tracking" card. Store methods: `findByToken`, `recordView`, `acknowledgeReferral`,
+> `updateTrackingStatus`.
