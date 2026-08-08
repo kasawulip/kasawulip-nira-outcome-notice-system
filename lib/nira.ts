@@ -228,6 +228,37 @@ export const CASE_STATUSES: CaseStatus[] = [
 
 export type DeliveryStatus = "Pending" | "Queued" | "Sent" | "Delivered" | "Failed"
 
+/**
+ * QR-based referral tracking lifecycle. Distinct from `caseStatus` (the internal
+ * NIRA workflow): this lifecycle follows the physical journey of the referral as
+ * it is scanned/acknowledged at the receiving office.
+ */
+export type TrackingStatus =
+  | "ISSUED"
+  | "VIEWED"
+  | "RECEIVED AT DESTINATION"
+  | "ACTIONED"
+  | "CLOSED"
+  | "CANCELLED"
+
+export const TRACKING_STATUSES: TrackingStatus[] = [
+  "ISSUED",
+  "VIEWED",
+  "RECEIVED AT DESTINATION",
+  "ACTIONED",
+  "CLOSED",
+  "CANCELLED",
+]
+
+/**
+ * A referral (and its QR) stays valid until it is administratively closed or
+ * cancelled — it must never expire on a timer, since clients may take time to
+ * report to the receiving office.
+ */
+export function isNoticeValid(status: TrackingStatus | undefined): boolean {
+  return status !== "CLOSED" && status !== "CANCELLED"
+}
+
 export interface NoticeRecord {
   id: string
   noticeNumber: string
@@ -272,6 +303,15 @@ export interface NoticeRecord {
   syncState?: "synced" | "queued"
   createdOffline?: boolean
   resolvedAt?: string // ISO — set when case marked Resolved
+  // QR retrieval + referral tracking. The token is a long, random, non-sequential
+  // string embedded in the QR URL (never the client's PII). The notice stays
+  // retrievable via this token until closed/cancelled.
+  retrievalToken?: string
+  trackingStatus?: TrackingStatus
+  viewedAt?: string // ISO — first time the public verification page was opened
+  acknowledgedAt?: string // ISO — when a receiving officer acknowledged the referral
+  acknowledgedByOffice?: string
+  acknowledgedByOfficer?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +381,39 @@ export function generateNoticeNumber(office = "Makindye District Office"): strin
   ).padStart(2, "0")}`
   const seq = String(Math.floor(400 + Math.random() * 500)).padStart(5, "0")
   return `NIRA-${code}-${stamp}-${seq}`
+}
+
+/**
+ * Generate a secure, random, non-sequential retrieval token for a notice's QR
+ * code. 32 base62 characters (~190 bits) so a notice cannot be discovered by
+ * guessing notice numbers or incrementing a URL value.
+ */
+export function generateRetrievalToken(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+  const len = 32
+  let out = ""
+  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+    const bytes = new Uint8Array(len)
+    crypto.getRandomValues(bytes)
+    for (let i = 0; i < len; i++) out += alphabet[bytes[i] % alphabet.length]
+  } else {
+    for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+  }
+  return out
+}
+
+/** Relative path to the public verification page for a retrieval token. */
+export function noticeVerifyPath(token: string): string {
+  return `/notice/${token}`
+}
+
+/**
+ * Absolute verification URL encoded into the QR. Uses the current origin at
+ * runtime so the same code works across preview/production domains.
+ */
+export function noticeVerifyUrl(token: string): string {
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  return `${origin}${noticeVerifyPath(token)}`
 }
 
 export const CURRENT_OFFICER = {

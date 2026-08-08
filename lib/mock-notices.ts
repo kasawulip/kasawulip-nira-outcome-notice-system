@@ -1,5 +1,5 @@
 import type { NoticeRecord } from "./nira"
-import { serviceName, formatDate, CURRENT_OFFICER } from "./nira"
+import { serviceName, formatDate, noticeVerifyUrl, CURRENT_OFFICER } from "./nira"
 import type { PreviewData } from "@/components/notice-preview"
 
 export function noticeToPreview(n: NoticeRecord): PreviewData {
@@ -29,6 +29,7 @@ export function noticeToPreview(n: NoticeRecord): PreviewData {
       : undefined,
     timeline: n.timeline,
     additional: n.additional,
+    verifyUrl: n.retrievalToken ? noticeVerifyUrl(n.retrievalToken) : undefined,
   }
 }
 

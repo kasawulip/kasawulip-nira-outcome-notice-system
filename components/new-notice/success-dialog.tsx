@@ -1,21 +1,34 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle2, CloudOff, Printer, FileText, Copy, FilePlus2, MessageSquare, Mail, FileCheck } from "lucide-react"
+import {
+  CheckCircle2,
+  CloudOff,
+  FileText,
+  FilePlus2,
+  MessageSquare,
+  Mail,
+  FileCheck,
+  Share2,
+  Download,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { DeliveryStatusBadge } from "@/components/status-badge"
+import { QRCode } from "@/components/qr-code"
+import { buildShareCard } from "@/lib/qr"
 import type { DeliveryStatus, DeliveryMethod } from "@/lib/nira"
 import type { PreviewData } from "@/components/notice-preview"
-import { cn } from "@/lib/utils"
 
 export interface IssuedNotice {
   data: PreviewData
   deliveryMethod: DeliveryMethod
   queued?: boolean
+  /** Absolute verification URL encoded in the QR for this notice. */
+  verifyUrl: string
 }
 
 function DeliveryLine({
@@ -63,6 +76,7 @@ export function SuccessDialog({
   const open = issued !== null
   const [smsPending, setSmsPending] = useState(true)
   const [emailPending, setEmailPending] = useState(true)
+  const [sharing, setSharing] = useState(false)
 
   const sendsSms = issued?.deliveryMethod !== "print"
   const sendsEmail = issued?.deliveryMethod === "sms-email" && !!issued?.data.email
@@ -80,7 +94,43 @@ export function SuccessDialog({
   }, [open, issued?.data.noticeNumber])
 
   if (!issued) return null
-  const { data, queued } = issued
+  const { data, queued, verifyUrl } = issued
+
+  async function handleShareQr() {
+    setSharing(true)
+    try {
+      const dataUrl = await buildShareCard({
+        verifyUrl,
+        noticeNumber: data.noticeNumber,
+        clientName: data.clientName,
+        destination: data.destination,
+      })
+      const res = await fetch(dataUrl)
+      const blob = await res.blob()
+      const file = new File([blob], `${data.noticeNumber}-QR.png`, { type: "image/png" })
+
+      // Prefer the native share sheet on capable (mobile) devices so the officer
+      // can send the image straight to the client; fall back to a download.
+      const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean }
+      if (typeof navigator.share === "function" && nav.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `NIRA Notice ${data.noticeNumber}`,
+          text: "Present this QR code at the NIRA office you have been referred to.",
+        })
+      } else {
+        const a = document.createElement("a")
+        a.href = dataUrl
+        a.download = `${data.noticeNumber}-QR.png`
+        a.click()
+        toast.success("QR image saved", { description: "Share it with the client." })
+      }
+    } catch {
+      toast.error("Could not generate the QR image. Please try again.")
+    } finally {
+      setSharing(false)
+    }
+  }
 
   return (
     <Dialog
@@ -89,7 +139,7 @@ export function SuccessDialog({
         if (!o) onNewNotice()
       }}
     >
-      <DialogContent showCloseButton={false} className="max-w-lg gap-0 overflow-hidden p-0">
+      <DialogContent showCloseButton={false} className="max-h-[92vh] max-w-lg gap-0 overflow-y-auto p-0">
         {queued ? (
           <div className="flex flex-col items-center gap-2 border-b border-border bg-warning/15 px-6 py-5 text-center">
             <span className="flex size-12 items-center justify-center rounded-full bg-warning text-warning-foreground">
@@ -98,41 +148,49 @@ export function SuccessDialog({
             <DialogTitle className="text-lg font-semibold">Saved &amp; queued offline.</DialogTitle>
             <p className="font-mono text-sm font-semibold text-primary">{data.noticeNumber}</p>
             <p className="text-xs text-muted-foreground">
-              This notice will be sent automatically once your connection is restored.
+              This notice will be sent automatically once your connection is restored. The QR below already
+              works for retrieval.
             </p>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 border-b border-border bg-success/10 px-6 py-5 text-center">
-            <span className="flex size-12 items-center justify-center rounded-full bg-success text-success-foreground">
-              <CheckCircle2 className="size-7" />
+          <div className="flex flex-col items-center gap-1.5 border-b border-border bg-success/10 px-6 py-4 text-center">
+            <span className="flex size-10 items-center justify-center rounded-full bg-success text-success-foreground">
+              <CheckCircle2 className="size-6" />
             </span>
-            <DialogTitle className="text-lg font-semibold">Notice issued successfully.</DialogTitle>
-            <p className="font-mono text-sm font-semibold text-primary">{data.noticeNumber}</p>
+            <DialogTitle className="text-base font-semibold uppercase tracking-wide">
+              Client Services Outcome Notice Issued
+            </DialogTitle>
+            <p className="font-mono text-sm font-semibold text-primary">Notice No: {data.noticeNumber}</p>
           </div>
         )}
 
-        <div className="flex flex-col gap-4 p-5">
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <div className="flex flex-col">
-              <dt className="text-xs text-muted-foreground">Client</dt>
-              <dd className="font-medium">{data.clientName}</dd>
-            </div>
-            <div className="flex flex-col">
-              <dt className="text-xs text-muted-foreground">Service</dt>
-              <dd className="font-medium">{data.serviceName}</dd>
-            </div>
-            <div className="flex flex-col">
-              <dt className="text-xs text-muted-foreground">Phone</dt>
-              <dd className="font-medium">{data.phone}</dd>
-            </div>
-            {data.email ? (
-              <div className="flex min-w-0 flex-col">
-                <dt className="text-xs text-muted-foreground">Email</dt>
-                <dd className="truncate font-medium">{data.email}</dd>
-              </div>
-            ) : null}
-          </dl>
+        {/* Prominent QR for the client */}
+        <div className="flex flex-col items-center gap-3 border-b border-border px-6 py-5">
+          <QRCode value={verifyUrl} size={208} errorCorrectionLevel="M" />
+          <p className="max-w-xs text-balance text-center text-sm text-muted-foreground">
+            Scan this QR code at any NIRA office to retrieve this notice.
+          </p>
+          <div className="flex w-full flex-col items-center gap-0.5 rounded-md bg-muted/50 px-3 py-2 text-center text-xs">
+            <span className="font-mono font-semibold text-primary">{data.noticeNumber}</span>
+            <span className="text-muted-foreground">{data.destination}</span>
+          </div>
+          <div className="grid w-full grid-cols-3 gap-2">
+            <Button variant="outline" size="sm" onClick={onPreview}>
+              <FileText data-icon="inline-start" />
+              View Notice
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Download data-icon="inline-start" />
+              Download PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleShareQr} disabled={sharing}>
+              {sharing ? <Spinner className="size-4" data-icon="inline-start" /> : <Share2 data-icon="inline-start" />}
+              Share QR
+            </Button>
+          </div>
+        </div>
 
+        <div className="flex flex-col gap-3 p-5">
           <div className="flex flex-col gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Delivery status
@@ -164,39 +222,13 @@ export function SuccessDialog({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            {queued
-              ? "You can keep issuing notices offline — they sync automatically when you reconnect."
-              : "You can start the next notice immediately — delivery continues in the background."}
+            SMS and email are optional — the client only needs to keep the QR image (or a photo of it) and
+            present it at the receiving office.
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 border-t border-border bg-muted/40 p-4 sm:flex-row sm:flex-wrap sm:items-center">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={() => window.print()}
-          >
-            <Printer data-icon="inline-start" />
-            Print
-          </Button>
-          <Button variant="outline" size="sm" className="flex-1" onClick={onPreview}>
-            <FileText data-icon="inline-start" />
-            View PDF
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={() => {
-              navigator.clipboard?.writeText(data.noticeNumber)
-              toast.success("Ticket number copied")
-            }}
-          >
-            <Copy data-icon="inline-start" />
-            Copy Ticket
-          </Button>
-          <Button size="sm" className={cn("w-full sm:w-auto sm:flex-[2]")} onClick={onNewNotice}>
+        <div className="border-t border-border bg-muted/40 p-4">
+          <Button className="w-full" onClick={onNewNotice}>
             <FilePlus2 data-icon="inline-start" />
             New Notice
           </Button>

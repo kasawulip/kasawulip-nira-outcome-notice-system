@@ -1,5 +1,5 @@
-import { QrCode } from "lucide-react"
 import { NiraLogo } from "@/components/nira-logo"
+import { QRCode } from "@/components/qr-code"
 import { maskPhone, maskNin, COMPLAINTS_CONTACTS } from "@/lib/nira"
 
 export interface PreviewData {
@@ -27,6 +27,8 @@ export interface PreviewData {
   cardContactPerson?: string
   timeline: string
   additional?: string
+  /** Absolute verification URL encoded into the QR (blank on drafts). */
+  verifyUrl?: string
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -55,12 +57,12 @@ export function NoticePreview({ data }: { data: PreviewData }) {
             <span className="text-xs text-muted-foreground">Republic of Uganda</span>
           </div>
         </div>
-        <div className="hidden flex-col items-center sm:flex">
-          <div className="flex size-16 items-center justify-center rounded-md border border-border bg-muted">
-            <QrCode className="size-10 text-muted-foreground" aria-hidden="true" />
+        {data.verifyUrl ? (
+          <div className="hidden flex-col items-center sm:flex">
+            <QRCode value={data.verifyUrl} size={72} className="border border-border p-1" />
+            <span className="mt-1 text-[10px] text-muted-foreground">Scan to verify</span>
           </div>
-          <span className="mt-1 text-[10px] text-muted-foreground">Scan to verify</span>
-        </div>
+        ) : null}
       </div>
 
       <div className="mt-4 text-center">
@@ -152,6 +154,32 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           </div>
         </div>
       </div>
+
+      {/* QR verification + offline-friendly fallback */}
+      {data.verifyUrl ? (
+        <div className="mt-5 flex flex-col items-center gap-4 rounded-md border border-border bg-muted/40 p-4 sm:flex-row">
+          <QRCode value={data.verifyUrl} size={128} errorCorrectionLevel="M" className="shrink-0" />
+          <div className="flex flex-col gap-1 text-center sm:text-left">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Verify this notice
+            </span>
+            <p className="text-sm text-foreground">
+              Present this QR code at the NIRA office you have been referred to. It can be scanned from a
+              printout, screenshot, or phone screen.
+            </p>
+            <dl className="mt-1 flex flex-col gap-0.5 text-sm">
+              <div className="flex flex-col sm:flex-row sm:gap-2">
+                <dt className="font-semibold text-muted-foreground">Notice No.:</dt>
+                <dd className="font-mono font-semibold text-primary">{data.noticeNumber}</dd>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:gap-2">
+                <dt className="font-semibold text-muted-foreground">Referral Destination:</dt>
+                <dd className="font-medium">{data.destination || "—"}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      ) : null}
 
       {/* Disclaimer + contacts */}
       <div className="mt-4 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-foreground">

@@ -71,6 +71,8 @@ import {
   isValidUgandaPhone,
   isValidEmail,
   generateNoticeNumber,
+  generateRetrievalToken,
+  noticeVerifyUrl,
   referralLocationById,
   hqDepartmentById,
   type ServiceId,
@@ -540,6 +542,7 @@ export function NoticeForm() {
     setIssuing(true)
     const online = isOnline
     const noticeNumber = generateNoticeNumber(office)
+    const retrievalToken = generateRetrievalToken()
     previewNumberRef.current = noticeNumber
     setLastValues({ reasons, destination })
 
@@ -613,6 +616,8 @@ export function NoticeForm() {
       pdfStatus: online ? "Generated" : "Pending",
       caseStatus: "Awaiting Client Action",
       priority: "Medium",
+      retrievalToken,
+      trackingStatus: "ISSUED",
     }
 
     setTimeout(() => {
@@ -642,7 +647,13 @@ export function NoticeForm() {
           }
         })
       }
-      setIssued({ data: buildPreview(noticeNumber), deliveryMethod, queued })
+      const verifyUrl = noticeVerifyUrl(retrievalToken)
+      setIssued({
+        data: { ...buildPreview(noticeNumber), verifyUrl },
+        deliveryMethod,
+        queued,
+        verifyUrl,
+      })
     }, 900)
   }
 
