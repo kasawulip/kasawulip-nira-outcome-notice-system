@@ -62,11 +62,19 @@ export const GENERAL_REASONS: string[] = [
   "Other",
 ]
 
+// Card-collection reasons that trigger precise card-location capture. Kept as
+// exported constants so the form and PDF can key their conditional logic off
+// the exact strings rather than duplicating them.
+export const CARD_AT_DISTRICT_REASON = "Card is available at another NIRA District Office"
+export const CARD_AT_OUTREACH_REASON =
+  "Card is available at another NIRA outreach/service station within this District"
+
 // Service-specific priority reasons shown first for particular services.
 const SERVICE_REASONS: Partial<Record<ServiceId, string[]>> = {
   collection: [
     "Card not yet available at the office",
-    "Card dispatched to another office",
+    CARD_AT_DISTRICT_REASON,
+    CARD_AT_OUTREACH_REASON,
     "Biometric verification unsuccessful",
     "Records could not be verified",
     "System or network interruption",
@@ -129,8 +137,10 @@ export function suggestAction(service: ServiceId | null, reasons: string[]): str
       "Await communication from NIRA. Your application is still under review.",
     "Card not yet available at the office":
       "Await notification that your National ID card has arrived at this office before returning to collect it.",
-    "Card dispatched to another office":
-      "Collect your National ID card from the office to which it was dispatched.",
+    [CARD_AT_DISTRICT_REASON]:
+      "Proceed to the indicated NIRA District Office for card collection and present this notice where applicable.",
+    [CARD_AT_OUTREACH_REASON]:
+      "Proceed to the indicated outreach/service station and ask for the named NIRA staff member for card collection.",
     "Record requires further investigation":
       "Await communication from NIRA while your record is investigated.",
     "Client attended the wrong office":
@@ -237,6 +247,16 @@ export interface NoticeRecord {
   referralEmail?: string
   referralEmailStatus?: ReferralEmailStatus
   referralEmailSentAt?: string // ISO
+  // Card-collection referral capture. Snapshots (name/email/batch/location/staff)
+  // are stored literally so later master-data edits never alter past notices.
+  cardLocationType?: CardLocationType
+  cardLocationOfficeId?: string
+  cardLocationText?: string // snapshot: district office name OR outreach location
+  cardBatchNumber?: string
+  receivingOfficeEmail?: string // snapshot of the office email at issue time
+  outreachContactStaffName?: string
+  outreachContactStaffId?: string
+  outreachContactStaffPhone?: string
   timeline: string
   additional?: string
   officer: string
@@ -471,52 +491,60 @@ export const NIRA_EMAIL_DOMAIN = "nira.go.ug"
 
 export type ReferralLocationType = "DISTRICT_OFFICE" | "HEADQUARTERS" | "OTHER"
 
+/** Where a National ID card is physically held for a collection referral. */
+export type CardLocationType = "DISTRICT_OFFICE" | "LOCAL_OUTREACH"
+
 export interface ReferralLocation {
   id: string
   type: ReferralLocationType
   name: string
   region: string
   active: boolean
+  /** Official office email from master data. May be absent (needs admin config). */
+  email?: string
 }
 
 /**
  * Approved list of NIRA District/Division offices in Uganda, including the
  * Kampala Capital City divisions. Each has a stable id stored on the referral
- * so display names can be updated later without affecting past records.
+ * so display names can be updated later without affecting past records. The
+ * `email` is the centrally maintained official office address; a few offices
+ * intentionally have none to exercise the "no official email configured" path.
  */
 export const REFERRAL_LOCATIONS: ReferralLocation[] = [
   // Kampala Capital City divisions
-  { id: "loc-kla-central", type: "DISTRICT_OFFICE", name: "Central Division", region: "Kampala", active: true },
-  { id: "loc-kla-kawempe", type: "DISTRICT_OFFICE", name: "Kawempe Division", region: "Kampala", active: true },
-  { id: "loc-kla-makindye", type: "DISTRICT_OFFICE", name: "Makindye Division", region: "Kampala", active: true },
-  { id: "loc-kla-nakawa", type: "DISTRICT_OFFICE", name: "Nakawa Division", region: "Kampala", active: true },
-  { id: "loc-kla-rubaga", type: "DISTRICT_OFFICE", name: "Rubaga Division", region: "Kampala", active: true },
+  { id: "loc-kla-central", type: "DISTRICT_OFFICE", name: "Central Division", region: "Kampala", active: true, email: `central.division@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-kla-kawempe", type: "DISTRICT_OFFICE", name: "Kawempe Division", region: "Kampala", active: true, email: `kawempe.division@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-kla-makindye", type: "DISTRICT_OFFICE", name: "Makindye Division", region: "Kampala", active: true, email: `makindye.division@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-kla-nakawa", type: "DISTRICT_OFFICE", name: "Nakawa Division", region: "Kampala", active: true, email: `nakawa.division@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-kla-rubaga", type: "DISTRICT_OFFICE", name: "Rubaga Division", region: "Kampala", active: true, email: `rubaga.division@${NIRA_EMAIL_DOMAIN}` },
   // Central region districts
-  { id: "loc-wakiso", type: "DISTRICT_OFFICE", name: "Wakiso", region: "Central", active: true },
-  { id: "loc-mukono", type: "DISTRICT_OFFICE", name: "Mukono", region: "Central", active: true },
-  { id: "loc-mpigi", type: "DISTRICT_OFFICE", name: "Mpigi", region: "Central", active: true },
-  { id: "loc-luwero", type: "DISTRICT_OFFICE", name: "Luwero", region: "Central", active: true },
-  { id: "loc-masaka", type: "DISTRICT_OFFICE", name: "Masaka", region: "Central", active: true },
-  { id: "loc-mubende", type: "DISTRICT_OFFICE", name: "Mubende", region: "Central", active: true },
+  { id: "loc-wakiso", type: "DISTRICT_OFFICE", name: "Wakiso", region: "Central", active: true, email: `wakiso@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-mukono", type: "DISTRICT_OFFICE", name: "Mukono", region: "Central", active: true, email: `mukono@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-mpigi", type: "DISTRICT_OFFICE", name: "Mpigi", region: "Central", active: true, email: `mpigi@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-luwero", type: "DISTRICT_OFFICE", name: "Luwero", region: "Central", active: true, email: `luwero@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-masaka", type: "DISTRICT_OFFICE", name: "Masaka", region: "Central", active: true, email: `masaka@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-mubende", type: "DISTRICT_OFFICE", name: "Mubende", region: "Central", active: true, email: `mubende@${NIRA_EMAIL_DOMAIN}` },
   // Eastern region
-  { id: "loc-jinja", type: "DISTRICT_OFFICE", name: "Jinja City", region: "Eastern", active: true },
-  { id: "loc-mbale", type: "DISTRICT_OFFICE", name: "Mbale City", region: "Eastern", active: true },
-  { id: "loc-soroti", type: "DISTRICT_OFFICE", name: "Soroti City", region: "Eastern", active: true },
-  { id: "loc-tororo", type: "DISTRICT_OFFICE", name: "Tororo", region: "Eastern", active: true },
-  { id: "loc-iganga", type: "DISTRICT_OFFICE", name: "Iganga", region: "Eastern", active: true },
+  { id: "loc-jinja", type: "DISTRICT_OFFICE", name: "Jinja City", region: "Eastern", active: true, email: `jinja@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-mbale", type: "DISTRICT_OFFICE", name: "Mbale City", region: "Eastern", active: true, email: `mbale@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-soroti", type: "DISTRICT_OFFICE", name: "Soroti City", region: "Eastern", active: true, email: `soroti@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-tororo", type: "DISTRICT_OFFICE", name: "Tororo", region: "Eastern", active: true, email: `tororo@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-iganga", type: "DISTRICT_OFFICE", name: "Iganga", region: "Eastern", active: true, email: `iganga@${NIRA_EMAIL_DOMAIN}` },
   // Northern region
-  { id: "loc-gulu", type: "DISTRICT_OFFICE", name: "Gulu City", region: "Northern", active: true },
-  { id: "loc-lira", type: "DISTRICT_OFFICE", name: "Lira City", region: "Northern", active: true },
-  { id: "loc-arua", type: "DISTRICT_OFFICE", name: "Arua City", region: "Northern", active: true },
+  { id: "loc-gulu", type: "DISTRICT_OFFICE", name: "Gulu City", region: "Northern", active: true, email: `gulu@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-lira", type: "DISTRICT_OFFICE", name: "Lira City", region: "Northern", active: true, email: `lira@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-arua", type: "DISTRICT_OFFICE", name: "Arua City", region: "Northern", active: true, email: `arua@${NIRA_EMAIL_DOMAIN}` },
+  // Master data gap on purpose: no official email configured yet.
   { id: "loc-kitgum", type: "DISTRICT_OFFICE", name: "Kitgum", region: "Northern", active: true },
   { id: "loc-moroto", type: "DISTRICT_OFFICE", name: "Moroto", region: "Northern", active: true },
   // Western region
-  { id: "loc-mbarara", type: "DISTRICT_OFFICE", name: "Mbarara City", region: "Western", active: true },
-  { id: "loc-fortportal", type: "DISTRICT_OFFICE", name: "Fort Portal City", region: "Western", active: true },
-  { id: "loc-hoima", type: "DISTRICT_OFFICE", name: "Hoima City", region: "Western", active: true },
-  { id: "loc-kabale", type: "DISTRICT_OFFICE", name: "Kabale", region: "Western", active: true },
-  { id: "loc-kasese", type: "DISTRICT_OFFICE", name: "Kasese", region: "Western", active: true },
-  { id: "loc-bushenyi", type: "DISTRICT_OFFICE", name: "Bushenyi", region: "Western", active: true },
+  { id: "loc-mbarara", type: "DISTRICT_OFFICE", name: "Mbarara City", region: "Western", active: true, email: `mbarara@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-fortportal", type: "DISTRICT_OFFICE", name: "Fort Portal City", region: "Western", active: true, email: `fortportal@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-hoima", type: "DISTRICT_OFFICE", name: "Hoima City", region: "Western", active: true, email: `hoima@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-kabale", type: "DISTRICT_OFFICE", name: "Kabale", region: "Western", active: true, email: `kabale@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-kasese", type: "DISTRICT_OFFICE", name: "Kasese", region: "Western", active: true, email: `kasese@${NIRA_EMAIL_DOMAIN}` },
+  { id: "loc-bushenyi", type: "DISTRICT_OFFICE", name: "Bushenyi", region: "Western", active: true, email: `bushenyi@${NIRA_EMAIL_DOMAIN}` },
 ]
 
 export function referralLocationById(id: string | undefined): ReferralLocation | undefined {

@@ -19,6 +19,12 @@ export interface PreviewData {
   destination: string
   /** Email address of the receiving HQ department, when the referral is to HQ. */
   referralEmail?: string
+  /** Card-collection referral details (Collection of National ID only). */
+  cardLocationType?: "DISTRICT_OFFICE" | "LOCAL_OUTREACH"
+  cardLocationLabel?: string
+  cardBatchNumber?: string
+  cardReceivingEmail?: string
+  cardContactPerson?: string
   timeline: string
   additional?: string
 }
@@ -107,6 +113,20 @@ export function NoticePreview({ data }: { data: PreviewData }) {
             <span className="mt-0.5 block text-xs text-muted-foreground">Referral email: {data.referralEmail}</span>
           ) : null}
         </Row>
+        {data.cardLocationType ? (
+          <>
+            <Row label="Card Collection Location">
+              <span className="font-medium">{data.cardLocationLabel || "—"}</span>
+            </Row>
+            {data.cardBatchNumber ? <Row label="Card Batch Number">{data.cardBatchNumber}</Row> : null}
+            {data.cardLocationType === "DISTRICT_OFFICE" && data.cardReceivingEmail ? (
+              <Row label="Receiving Office Email">{data.cardReceivingEmail}</Row>
+            ) : null}
+            {data.cardLocationType === "LOCAL_OUTREACH" && data.cardContactPerson ? (
+              <Row label="Officer / Staff to Contact">{data.cardContactPerson}</Row>
+            ) : null}
+          </>
+        ) : null}
         <Row label="Expected Timeline">{data.timeline || "—"}</Row>
         {data.additional ? <Row label="Additional Details">{data.additional}</Row> : null}
       </div>

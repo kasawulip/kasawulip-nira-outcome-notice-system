@@ -45,6 +45,7 @@ import { SectionCard } from "./section-card"
 import { SelectableTile } from "./selectable-tile"
 import { DisclosureSelect, type DisclosureOption } from "./disclosure-select"
 import { ReferralDestinationFields } from "./referral-destination-fields"
+import { CardLocationFields, type CardLocationValue } from "./card-location-fields"
 import { SuccessDialog, type IssuedNotice } from "./success-dialog"
 import { ServiceIcon } from "@/components/service-icon"
 import { NoticePreviewDialog } from "@/components/notice-preview-dialog"
@@ -61,6 +62,8 @@ import {
   ALL_DISTRICTS,
   REFERRAL_DISTRICT_DESTINATION,
   REFERRAL_HQ_DESTINATION,
+  CARD_AT_DISTRICT_REASON,
+  CARD_AT_OUTREACH_REASON,
   reasonsForService,
   suggestAction,
   serviceName,
@@ -74,6 +77,7 @@ import {
   type DeliveryMethod,
   type NoticeRecord,
   type ReferralEmailStatus,
+  type CardLocationType,
 } from "@/lib/nira"
 
 const DRAFT_KEY = "nira.draft"
@@ -86,7 +90,12 @@ interface LastValues {
 export function NoticeForm() {
   const { status: network, isOnline } = useNetwork()
   const { account } = useSession()
-  const { issueNotice: persistNotice, channelSettings, sendReferralEmail: dispatchReferralEmail } = useDataStore()
+  const {
+    issueNotice: persistNotice,
+    channelSettings,
+    sendReferralEmail: dispatchReferralEmail,
+    accounts,
+  } = useDataStore()
 
   const isAdmin = account?.role === "systems-admin"
   const fixedOffice = account && account.district !== ALL_DISTRICTS ? account.district : ""
@@ -106,6 +115,16 @@ export function NoticeForm() {
   const [service, setService] = useState<ServiceId | null>(null)
   const [reasons, setReasons] = useState<string[]>([])
   const [otherReason, setOtherReason] = useState("")
+  // Card-collection referral capture (see CardLocationFields).
+  const emptyCardLocation: CardLocationValue = {
+    officeId: "",
+    batch: "",
+    outreachText: "",
+    staffName: "",
+    staffId: "",
+    staffPhone: "",
+  }
+  const [cardLocation, setCardLocation] = useState<CardLocationValue>(emptyCardLocation)
   const [action, setAction] = useState("")
   const [actionEdited, setActionEdited] = useState(false)
   const [destination, setDestination] = useState("")
@@ -158,6 +177,16 @@ export function NoticeForm() {
         setReferralOfficeId(d.referralOfficeId ?? "")
         setReferralDepartmentId(d.referralDepartmentId ?? "")
         setReferralEmail(d.referralEmail ?? "")
+        if (d.cardLocation) {
+          setCardLocation({
+            officeId: d.cardLocation.officeId ?? "",
+            batch: d.cardLocation.batch ?? "",
+            outreachText: d.cardLocation.outreachText ?? "",
+            staffName: d.cardLocation.staffName ?? "",
+            staffId: d.cardLocation.staffId ?? "",
+            staffPhone: d.cardLocation.staffPhone ?? "",
+          })
+        }
         setTimeline(d.timeline ?? "")
         setTimelineDate(d.timelineDate ?? "")
         setTimelineNum(d.timelineNum ?? "")
@@ -183,10 +212,49 @@ export function NoticeForm() {
   const availableReasons = useMemo(() => reasonsForService(service), [service])
   const otherReasonSelected = reasons.includes("Other")
 
+  // Card-collection pathways (mutually exclusive, collection service only).
+  const cardAtDistrict = service === "collection" && reasons.includes(CARD_AT_DISTRICT_REASON)
+  const cardAtOutreach = service === "collection" && reasons.includes(CARD_AT_OUTREACH_REASON)
+
+  // Same-district active staff offered as outreach contact suggestions.
+  const staffSuggestions = useMemo(
+    () =>
+      accounts
+        .filter((a) => a.active && a.role === "district-staff" && a.district === office && a.name !== account?.name)
+        .map((a) => ({ id: a.id, name: a.name, title: a.title })),
+    [accounts, office, account?.name],
+  )
+
   useEffect(() => {
     if (actionEdited) return
     setAction(suggestAction(service, reasons))
   }, [service, reasons, actionEdited])
+
+  // Clear obsolete card-location child fields whenever the active pathway
+  // changes so stale office/email/batch/location/staff can never leak through.
+  useEffect(() => {
+    if (!hydratedRef.current) return
+    if (!cardAtDistrict && !cardAtOutreach) {
+      setCardLocation((prev) => {
+        const anySet = prev.officeId || prev.batch || prev.outreachText || prev.staffName || prev.staffId || prev.staffPhone
+        return anySet ? { ...emptyCardLocation } : prev
+      })
+      return
+    }
+    if (cardAtDistrict) {
+      // District path keeps officeId + batch; drop any outreach-only values.
+      setCardLocation((prev) =>
+        prev.outreachText || prev.staffName || prev.staffId || prev.staffPhone
+          ? { ...prev, outreachText: "", staffName: "", staffId: "", staffPhone: "" }
+          : prev,
+      )
+    }
+    if (cardAtOutreach) {
+      // Outreach path keeps outreach/staff + batch; drop any district office id.
+      setCardLocation((prev) => (prev.officeId ? { ...prev, officeId: "" } : prev))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardAtDistrict, cardAtOutreach])
 
   // Clear obsolete referral child fields whenever the destination changes so
   // stale office/department values can never leak into the issued referral.
@@ -207,7 +275,19 @@ export function NoticeForm() {
     phone: phoneValid,
     name: name.trim().length > 1,
     service: service !== null,
-    reason: reasons.length > 0 && (!otherReasonSelected || otherReason.trim().length > 2),
+    reason:
+      reasons.length > 0 &&
+      (!otherReasonSelected || otherReason.trim().length > 2) &&
+      // District card path: exact office + batch + an office with a configured email.
+      (!cardAtDistrict ||
+        (cardLocation.officeId.length > 0 &&
+          cardLocation.batch.trim().length > 0 &&
+          Boolean(referralLocationById(cardLocation.officeId)?.email))) &&
+      // Outreach card path: location + batch + contact staff member.
+      (!cardAtOutreach ||
+        (cardLocation.outreachText.trim().length > 2 &&
+          cardLocation.batch.trim().length > 0 &&
+          cardLocation.staffName.trim().length > 1)),
     action: action.trim().length > 3,
     destination:
       destination.length > 0 &&
@@ -252,6 +332,7 @@ export function NoticeForm() {
       referralOfficeId,
       referralDepartmentId,
       referralEmail,
+      cardLocation,
       timeline,
       timelineDate,
       timelineNum,
@@ -280,6 +361,7 @@ export function NoticeForm() {
     referralOfficeId,
     referralDepartmentId,
     referralEmail,
+    cardLocation,
     timeline,
     timelineDate,
     timelineNum,
@@ -315,11 +397,19 @@ export function NoticeForm() {
     setService(id as ServiceId)
     setReasons([])
     setOtherReason("")
+    setCardLocation({ officeId: "", batch: "", outreachText: "", staffName: "", staffId: "", staffPhone: "" })
     setActionEdited(false)
   }, [])
 
   const toggleReason = (r: string) => {
-    setReasons((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]))
+    setReasons((prev) => {
+      if (prev.includes(r)) return prev.filter((x) => x !== r)
+      let next = [...prev, r]
+      // The two card-collection pathways are mutually exclusive.
+      if (r === CARD_AT_DISTRICT_REASON) next = next.filter((x) => x !== CARD_AT_OUTREACH_REASON)
+      if (r === CARD_AT_OUTREACH_REASON) next = next.filter((x) => x !== CARD_AT_DISTRICT_REASON)
+      return next
+    })
   }
 
   const resolvedTimeline = () => {
@@ -366,9 +456,38 @@ export function NoticeForm() {
       destination === REFERRAL_HQ_DESTINATION
         ? referralEmail || hqDepartmentById(referralDepartmentId)?.email
         : undefined,
+    ...cardPreviewFields(),
     timeline: resolvedTimeline(),
     additional: additional || undefined,
   })
+
+  // Card-collection preview fields derived from current form state.
+  const cardPreviewFields = (): Partial<PreviewData> => {
+    if (cardAtDistrict) {
+      const office = referralLocationById(cardLocation.officeId)
+      if (!office) return {}
+      return {
+        cardLocationType: "DISTRICT_OFFICE",
+        cardLocationLabel: `NIRA – ${office.name} District Office`,
+        cardBatchNumber: cardLocation.batch.trim() || undefined,
+        cardReceivingEmail: office.email,
+      }
+    }
+    if (cardAtOutreach) {
+      const staffTitle = staffSuggestions.find((s) => s.id === cardLocation.staffId)?.title
+      const contact = cardLocation.staffName.trim()
+        ? [cardLocation.staffName.trim(), staffTitle].filter(Boolean).join(" – ") +
+          (cardLocation.staffPhone.trim() ? ` · ${cardLocation.staffPhone.trim()}` : "")
+        : undefined
+      return {
+        cardLocationType: "LOCAL_OUTREACH",
+        cardLocationLabel: cardLocation.outreachText.trim() || undefined,
+        cardBatchNumber: cardLocation.batch.trim() || undefined,
+        cardContactPerson: contact,
+      }
+    }
+    return {}
+  }
 
   const resetForm = useCallback(() => {
     setPhone("")
@@ -380,6 +499,7 @@ export function NoticeForm() {
     setService(null)
     setReasons([])
     setOtherReason("")
+    setCardLocation({ officeId: "", batch: "", outreachText: "", staffName: "", staffId: "", staffPhone: "" })
     setAction("")
     setActionEdited(false)
     setDestination("")
@@ -427,9 +547,25 @@ export function NoticeForm() {
     const isDistrictReferral = destination === REFERRAL_DISTRICT_DESTINATION
     const isHqReferral = destination === REFERRAL_HQ_DESTINATION
     const hqDept = isHqReferral ? hqDepartmentById(referralDepartmentId) : undefined
-    const activeReferralEmail = isHqReferral ? referralEmail || hqDept?.email : undefined
-    // HQ referrals must email the receiving department; start as pending so the
-    // status can be flipped to sent/failed after the delivery attempt.
+
+    // Resolve card-collection referral snapshot (values frozen at issue time so
+    // later master-data edits never change historic notices).
+    const cardOffice = cardAtDistrict ? referralLocationById(cardLocation.officeId) : undefined
+    const cardLocationType: CardLocationType | undefined = cardAtDistrict
+      ? "DISTRICT_OFFICE"
+      : cardAtOutreach
+        ? "LOCAL_OUTREACH"
+        : undefined
+
+    // A single receiving email drives the send/resend machinery: the receiving
+    // district office for a card referral, else the HQ department for an HQ
+    // destination referral. Card referrals to a district take precedence.
+    const activeReferralEmail = cardAtDistrict
+      ? cardOffice?.email
+      : isHqReferral
+        ? referralEmail || hqDept?.email
+        : undefined
+    // Start pending so the status can be flipped to sent/failed after delivery.
     const referralEmailStatus: ReferralEmailStatus = activeReferralEmail ? "pending" : "not-required"
 
     const record: NoticeRecord = {
@@ -452,6 +588,21 @@ export function NoticeForm() {
       referralDepartmentId: isHqReferral ? referralDepartmentId || undefined : undefined,
       referralEmail: activeReferralEmail || undefined,
       referralEmailStatus: activeReferralEmail ? referralEmailStatus : undefined,
+      // Card-collection referral snapshot.
+      cardLocationType,
+      cardLocationOfficeId: cardAtDistrict ? cardLocation.officeId || undefined : undefined,
+      cardLocationText: cardAtDistrict
+        ? cardOffice
+          ? `NIRA ${cardOffice.name} District Office`
+          : undefined
+        : cardAtOutreach
+          ? cardLocation.outreachText || undefined
+          : undefined,
+      cardBatchNumber: cardLocationType ? cardLocation.batch.trim() || undefined : undefined,
+      receivingOfficeEmail: cardAtDistrict ? cardOffice?.email : undefined,
+      outreachContactStaffName: cardAtOutreach ? cardLocation.staffName.trim() || undefined : undefined,
+      outreachContactStaffId: cardAtOutreach ? cardLocation.staffId || undefined : undefined,
+      outreachContactStaffPhone: cardAtOutreach ? cardLocation.staffPhone.trim() || undefined : undefined,
       timeline: resolvedTimeline(),
       additional: additional || undefined,
       officer: account?.name ?? "",
@@ -477,12 +628,13 @@ export function NoticeForm() {
       } else {
         toast.success("Notice issued — delivery confirming in the background")
       }
-      // Save the referral first (done above), then attempt the department email.
-      // Email failure never loses the referral — it is flagged for later resend.
+      // Save the referral first (done above), then attempt the receiving-office
+      // email. Email failure never loses the referral — it is flagged for resend.
       if (activeReferralEmail && !queued) {
+        const target = cardAtDistrict ? "receiving district office" : "receiving department"
         void dispatchReferralEmail(record.id).then((sent) => {
           if (sent) {
-            toast.success("Referral emailed to receiving department", { description: activeReferralEmail })
+            toast.success(`Referral emailed to ${target}`, { description: activeReferralEmail })
           } else {
             toast.error("Referral email delivery failed", {
               description: "Flagged as pending — resend it from the register.",
@@ -723,6 +875,17 @@ export function NoticeForm() {
             <SelectableTile key={r} label={r} multi selected={reasons.includes(r)} onSelect={() => toggleReason(r)} />
           ))}
         </div>
+        {cardAtDistrict ? (
+          <CardLocationFields mode="district" value={cardLocation} onChange={(patch) => setCardLocation((prev) => ({ ...prev, ...patch }))} />
+        ) : null}
+        {cardAtOutreach ? (
+          <CardLocationFields
+            mode="outreach"
+            value={cardLocation}
+            staffSuggestions={staffSuggestions}
+            onChange={(patch) => setCardLocation((prev) => ({ ...prev, ...patch }))}
+          />
+        ) : null}
         {otherReasonSelected ? (
           <Field className="mt-3">
             <FieldLabel htmlFor="other-reason">
