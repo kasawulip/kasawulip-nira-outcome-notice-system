@@ -146,7 +146,7 @@ export function suggestAction(service: ServiceId | null, reasons: string[]): str
 
 export const DESTINATIONS = [
   "Return to this office",
-  "Another NIRA office",
+  "Another NIRA District Office",
   "NIRA Headquarters",
   "Health facility",
   "Local Council",
@@ -155,6 +155,10 @@ export const DESTINATIONS = [
   "Await communication from NIRA",
   "Other",
 ] as const
+
+// Destinations that require capturing a precise receiving office / department.
+export const REFERRAL_DISTRICT_DESTINATION = "Another NIRA District Office"
+export const REFERRAL_HQ_DESTINATION = "NIRA Headquarters"
 
 export const TIMELINES = [
   "Same day",
@@ -226,6 +230,13 @@ export interface NoticeRecord {
   reasons: string[]
   action: string
   destination: string
+  // Precise referral capture (stable ids reference master data).
+  referralDestinationType?: ReferralLocationType
+  referralOfficeId?: string
+  referralDepartmentId?: string
+  referralEmail?: string
+  referralEmailStatus?: ReferralEmailStatus
+  referralEmailSentAt?: string // ISO
   timeline: string
   additional?: string
   officer: string
@@ -448,4 +459,111 @@ export const DEFAULT_CHANNEL_SETTINGS: DeliveryChannelSettings = {
   sms: true,
   email: true,
   print: true,
+}
+
+// ---------------------------------------------------------------------------
+// Referral master data — centrally maintained so office names and department
+// contacts can change without altering the form or historic referral records.
+// ---------------------------------------------------------------------------
+
+/** Domain used to compose official department addresses. */
+export const NIRA_EMAIL_DOMAIN = "nira.go.ug"
+
+export type ReferralLocationType = "DISTRICT_OFFICE" | "HEADQUARTERS" | "OTHER"
+
+export interface ReferralLocation {
+  id: string
+  type: ReferralLocationType
+  name: string
+  region: string
+  active: boolean
+}
+
+/**
+ * Approved list of NIRA District/Division offices in Uganda, including the
+ * Kampala Capital City divisions. Each has a stable id stored on the referral
+ * so display names can be updated later without affecting past records.
+ */
+export const REFERRAL_LOCATIONS: ReferralLocation[] = [
+  // Kampala Capital City divisions
+  { id: "loc-kla-central", type: "DISTRICT_OFFICE", name: "Central Division", region: "Kampala", active: true },
+  { id: "loc-kla-kawempe", type: "DISTRICT_OFFICE", name: "Kawempe Division", region: "Kampala", active: true },
+  { id: "loc-kla-makindye", type: "DISTRICT_OFFICE", name: "Makindye Division", region: "Kampala", active: true },
+  { id: "loc-kla-nakawa", type: "DISTRICT_OFFICE", name: "Nakawa Division", region: "Kampala", active: true },
+  { id: "loc-kla-rubaga", type: "DISTRICT_OFFICE", name: "Rubaga Division", region: "Kampala", active: true },
+  // Central region districts
+  { id: "loc-wakiso", type: "DISTRICT_OFFICE", name: "Wakiso", region: "Central", active: true },
+  { id: "loc-mukono", type: "DISTRICT_OFFICE", name: "Mukono", region: "Central", active: true },
+  { id: "loc-mpigi", type: "DISTRICT_OFFICE", name: "Mpigi", region: "Central", active: true },
+  { id: "loc-luwero", type: "DISTRICT_OFFICE", name: "Luwero", region: "Central", active: true },
+  { id: "loc-masaka", type: "DISTRICT_OFFICE", name: "Masaka", region: "Central", active: true },
+  { id: "loc-mubende", type: "DISTRICT_OFFICE", name: "Mubende", region: "Central", active: true },
+  // Eastern region
+  { id: "loc-jinja", type: "DISTRICT_OFFICE", name: "Jinja City", region: "Eastern", active: true },
+  { id: "loc-mbale", type: "DISTRICT_OFFICE", name: "Mbale City", region: "Eastern", active: true },
+  { id: "loc-soroti", type: "DISTRICT_OFFICE", name: "Soroti City", region: "Eastern", active: true },
+  { id: "loc-tororo", type: "DISTRICT_OFFICE", name: "Tororo", region: "Eastern", active: true },
+  { id: "loc-iganga", type: "DISTRICT_OFFICE", name: "Iganga", region: "Eastern", active: true },
+  // Northern region
+  { id: "loc-gulu", type: "DISTRICT_OFFICE", name: "Gulu City", region: "Northern", active: true },
+  { id: "loc-lira", type: "DISTRICT_OFFICE", name: "Lira City", region: "Northern", active: true },
+  { id: "loc-arua", type: "DISTRICT_OFFICE", name: "Arua City", region: "Northern", active: true },
+  { id: "loc-kitgum", type: "DISTRICT_OFFICE", name: "Kitgum", region: "Northern", active: true },
+  { id: "loc-moroto", type: "DISTRICT_OFFICE", name: "Moroto", region: "Northern", active: true },
+  // Western region
+  { id: "loc-mbarara", type: "DISTRICT_OFFICE", name: "Mbarara City", region: "Western", active: true },
+  { id: "loc-fortportal", type: "DISTRICT_OFFICE", name: "Fort Portal City", region: "Western", active: true },
+  { id: "loc-hoima", type: "DISTRICT_OFFICE", name: "Hoima City", region: "Western", active: true },
+  { id: "loc-kabale", type: "DISTRICT_OFFICE", name: "Kabale", region: "Western", active: true },
+  { id: "loc-kasese", type: "DISTRICT_OFFICE", name: "Kasese", region: "Western", active: true },
+  { id: "loc-bushenyi", type: "DISTRICT_OFFICE", name: "Bushenyi", region: "Western", active: true },
+]
+
+export function referralLocationById(id: string | undefined): ReferralLocation | undefined {
+  if (!id) return undefined
+  return REFERRAL_LOCATIONS.find((l) => l.id === id)
+}
+
+export interface HeadquartersDepartment {
+  id: string
+  name: string
+  email: string
+  active: boolean
+}
+
+/**
+ * Configurable Headquarters departments/sections. Additional departments can
+ * be appended here without changing any front-end code.
+ */
+export const HQ_DEPARTMENTS: HeadquartersDepartment[] = [
+  { id: "dept-legal", name: "Legal Department", email: `legal@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-client-relations", name: "Client Relations Office", email: `clientrelations@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-bdar", name: "BDAR Office", email: `bdar@${NIRA_EMAIL_DOMAIN}`, active: true },
+]
+
+export function hqDepartmentById(id: string | undefined): HeadquartersDepartment | undefined {
+  if (!id) return undefined
+  return HQ_DEPARTMENTS.find((d) => d.id === id)
+}
+
+export type ReferralEmailStatus = "not-required" | "pending" | "sent" | "failed"
+
+/**
+ * Produces the exact, precise referral destination label for a notice — never
+ * the vague category on its own when a specific office/department is captured.
+ */
+export function referralDestinationLabel(n: {
+  destination: string
+  referralOfficeId?: string
+  referralDepartmentId?: string
+}): string {
+  if (n.destination === REFERRAL_DISTRICT_DESTINATION) {
+    const loc = referralLocationById(n.referralOfficeId)
+    return loc ? `NIRA – ${loc.name} District Office` : n.destination
+  }
+  if (n.destination === REFERRAL_HQ_DESTINATION) {
+    const dept = hqDepartmentById(n.referralDepartmentId)
+    return dept ? `NIRA Headquarters – ${dept.name}` : n.destination
+  }
+  return n.destination
 }

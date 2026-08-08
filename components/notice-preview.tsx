@@ -17,6 +17,8 @@ export interface PreviewData {
   reasons: string[]
   action: string
   destination: string
+  /** Email address of the receiving HQ department, when the referral is to HQ. */
+  referralEmail?: string
   timeline: string
   additional?: string
 }
@@ -99,7 +101,12 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           )}
         </Row>
         <Row label="Action Required">{data.action || "—"}</Row>
-        <Row label="Where to Go Next">{data.destination || "—"}</Row>
+        <Row label="Where to Go Next">
+          <span className="font-medium">{data.destination || "—"}</span>
+          {data.referralEmail ? (
+            <span className="mt-0.5 block text-xs text-muted-foreground">Referral email: {data.referralEmail}</span>
+          ) : null}
+        </Row>
         <Row label="Expected Timeline">{data.timeline || "—"}</Row>
         {data.additional ? <Row label="Additional Details">{data.additional}</Row> : null}
       </div>

@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils"
 import { SectionCard } from "./section-card"
 import { SelectableTile } from "./selectable-tile"
 import { DisclosureSelect, type DisclosureOption } from "./disclosure-select"
+import { ReferralDestinationFields } from "./referral-destination-fields"
 import { SuccessDialog, type IssuedNotice } from "./success-dialog"
 import { ServiceIcon } from "@/components/service-icon"
 import { NoticePreviewDialog } from "@/components/notice-preview-dialog"
@@ -56,8 +57,9 @@ import {
   DELIVERY_METHODS,
   DESTINATIONS,
   TIMELINES,
-  DISTRICTS,
   ALL_DISTRICTS,
+  REFERRAL_DISTRICT_DESTINATION,
+  REFERRAL_HQ_DESTINATION,
   reasonsForService,
   suggestAction,
   serviceName,
@@ -65,9 +67,12 @@ import {
   isValidUgandaPhone,
   isValidEmail,
   generateNoticeNumber,
+  referralLocationById,
+  hqDepartmentById,
   type ServiceId,
   type DeliveryMethod,
   type NoticeRecord,
+  type ReferralEmailStatus,
 } from "@/lib/nira"
 
 const DRAFT_KEY = "nira.draft"
@@ -103,8 +108,11 @@ export function NoticeForm() {
   const [action, setAction] = useState("")
   const [actionEdited, setActionEdited] = useState(false)
   const [destination, setDestination] = useState("")
-  const [destinationOffice, setDestinationOffice] = useState("")
   const [destinationOther, setDestinationOther] = useState("")
+  // Precise referral capture (see ReferralDestinationFields).
+  const [referralOfficeId, setReferralOfficeId] = useState("")
+  const [referralDepartmentId, setReferralDepartmentId] = useState("")
+  const [referralEmail, setReferralEmail] = useState("")
   const [timeline, setTimeline] = useState("")
   const [timelineDate, setTimelineDate] = useState("")
   const [timelineNum, setTimelineNum] = useState("")
@@ -145,8 +153,10 @@ export function NoticeForm() {
         setAction(d.action ?? "")
         setActionEdited(d.actionEdited ?? false)
         setDestination(d.destination ?? "")
-        setDestinationOffice(d.destinationOffice ?? "")
         setDestinationOther(d.destinationOther ?? "")
+        setReferralOfficeId(d.referralOfficeId ?? "")
+        setReferralDepartmentId(d.referralDepartmentId ?? "")
+        setReferralEmail(d.referralEmail ?? "")
         setTimeline(d.timeline ?? "")
         setTimelineDate(d.timelineDate ?? "")
         setTimelineNum(d.timelineNum ?? "")
@@ -177,6 +187,19 @@ export function NoticeForm() {
     setAction(suggestAction(service, reasons))
   }, [service, reasons, actionEdited])
 
+  // Clear obsolete referral child fields whenever the destination changes so
+  // stale office/department values can never leak into the issued referral.
+  useEffect(() => {
+    if (!hydratedRef.current) return
+    if (destination !== REFERRAL_DISTRICT_DESTINATION && referralOfficeId) setReferralOfficeId("")
+    if (destination !== REFERRAL_HQ_DESTINATION && (referralDepartmentId || referralEmail)) {
+      setReferralDepartmentId("")
+      setReferralEmail("")
+    }
+    if (destination !== "Other" && destinationOther) setDestinationOther("")
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destination])
+
   const additionalRequired = otherReasonSelected || actionEdited || timeline === "Other"
 
   const checks = {
@@ -187,7 +210,9 @@ export function NoticeForm() {
     action: action.trim().length > 3,
     destination:
       destination.length > 0 &&
-      (destination !== "Another NIRA office" || destinationOffice.length > 0) &&
+      (destination !== REFERRAL_DISTRICT_DESTINATION || referralOfficeId.length > 0) &&
+      (destination !== REFERRAL_HQ_DESTINATION ||
+        (referralDepartmentId.length > 0 && referralEmail.length > 0 && isValidEmail(referralEmail))) &&
       (destination !== "Other" || destinationOther.trim().length > 1),
     timeline:
       timeline.length > 0 &&
@@ -222,8 +247,10 @@ export function NoticeForm() {
       action,
       actionEdited,
       destination,
-      destinationOffice,
       destinationOther,
+      referralOfficeId,
+      referralDepartmentId,
+      referralEmail,
       timeline,
       timelineDate,
       timelineNum,
@@ -248,8 +275,10 @@ export function NoticeForm() {
     action,
     actionEdited,
     destination,
-    destinationOffice,
     destinationOther,
+    referralOfficeId,
+    referralDepartmentId,
+    referralEmail,
     timeline,
     timelineDate,
     timelineNum,
@@ -303,7 +332,14 @@ export function NoticeForm() {
   }
 
   const resolvedDestination = () => {
-    if (destination === "Another NIRA office" && destinationOffice) return destinationOffice
+    if (destination === REFERRAL_DISTRICT_DESTINATION) {
+      const loc = referralLocationById(referralOfficeId)
+      return loc ? `NIRA – ${loc.name} District Office` : destination
+    }
+    if (destination === REFERRAL_HQ_DESTINATION) {
+      const dept = hqDepartmentById(referralDepartmentId)
+      return dept ? `NIRA Headquarters – ${dept.name}` : destination
+    }
     if (destination === "Other" && destinationOther) return destinationOther
     return destination
   }
@@ -325,6 +361,10 @@ export function NoticeForm() {
     reasons: resolvedReasons(),
     action,
     destination: resolvedDestination(),
+    referralEmail:
+      destination === REFERRAL_HQ_DESTINATION
+        ? referralEmail || hqDepartmentById(referralDepartmentId)?.email
+        : undefined,
     timeline: resolvedTimeline(),
     additional: additional || undefined,
   })
@@ -342,8 +382,10 @@ export function NoticeForm() {
     setAction("")
     setActionEdited(false)
     setDestination("")
-    setDestinationOffice("")
     setDestinationOther("")
+    setReferralOfficeId("")
+    setReferralDepartmentId("")
+    setReferralEmail("")
     setTimeline("")
     setTimelineDate("")
     setTimelineNum("")
@@ -380,6 +422,19 @@ export function NoticeForm() {
     previewNumberRef.current = noticeNumber
     setLastValues({ reasons, destination })
 
+    // Resolve referral metadata (stored by stable id, never display name only).
+    const isDistrictReferral = destination === REFERRAL_DISTRICT_DESTINATION
+    const isHqReferral = destination === REFERRAL_HQ_DESTINATION
+    const hqDept = isHqReferral ? hqDepartmentById(referralDepartmentId) : undefined
+    const activeReferralEmail = isHqReferral ? referralEmail || hqDept?.email : undefined
+    // HQ referrals must email the receiving department; start as pending so it
+    // can be flipped to sent/failed after the delivery attempt.
+    const referralEmailStatus: ReferralEmailStatus = activeReferralEmail
+      ? online
+        ? "pending"
+        : "pending"
+      : "not-required"
+
     const record: NoticeRecord = {
       id:
         typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -395,6 +450,11 @@ export function NoticeForm() {
       reasons: resolvedReasons(),
       action,
       destination: resolvedDestination(),
+      referralDestinationType: isDistrictReferral ? "DISTRICT_OFFICE" : isHqReferral ? "HEADQUARTERS" : undefined,
+      referralOfficeId: isDistrictReferral ? referralOfficeId || undefined : undefined,
+      referralDepartmentId: isHqReferral ? referralDepartmentId || undefined : undefined,
+      referralEmail: activeReferralEmail || undefined,
+      referralEmailStatus: activeReferralEmail ? referralEmailStatus : undefined,
       timeline: resolvedTimeline(),
       additional: additional || undefined,
       officer: account?.name ?? "",
@@ -419,6 +479,10 @@ export function NoticeForm() {
         toast.warning("Saved & queued — will send when back online")
       } else {
         toast.success("Notice issued — delivery confirming in the background")
+      }
+      // Save the referral first (done above), then attempt the department email.
+      if (activeReferralEmail && !queued) {
+        sendReferralEmail(record.id, record.noticeNumber, activeReferralEmail)
       }
       setIssued({ data: buildPreview(noticeNumber), deliveryMethod, queued })
     }, 900)
@@ -722,22 +786,15 @@ export function NoticeForm() {
               value={destination || null}
               onChange={setDestination}
             />
-            {destination === "Another NIRA office" ? (
-              <div className="mt-2">
-                <Select value={destinationOffice} onValueChange={(v) => setDestinationOffice(v ?? "")}>
-                  <SelectTrigger className="h-11 w-full sm:w-80">
-                    <SelectValue placeholder="Search and select the office" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DISTRICTS.map((o) => (
-                      <SelectItem key={o.name} value={o.name}>
-                        {o.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
+            <ReferralDestinationFields
+              destination={destination}
+              value={{ officeId: referralOfficeId, departmentId: referralDepartmentId, email: referralEmail }}
+              onChange={(patch) => {
+                if ("officeId" in patch) setReferralOfficeId(patch.officeId ?? "")
+                if ("departmentId" in patch) setReferralDepartmentId(patch.departmentId ?? "")
+                if ("email" in patch) setReferralEmail(patch.email ?? "")
+              }}
+            />
             {destination === "Other" ? (
               <Input
                 className="mt-2 h-11 sm:w-80"

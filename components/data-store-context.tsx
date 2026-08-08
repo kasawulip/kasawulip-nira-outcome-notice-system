@@ -48,6 +48,9 @@ interface DataStoreValue {
   resolveCase: (id: string) => void
   updateCaseStatus: (id: string, status: CaseStatus) => void
   retryDelivery: (id: string) => void
+  // Referral email to a receiving HQ department. Returns a promise resolving to
+  // whether delivery succeeded so the caller can surface a status toast.
+  sendReferralEmail: (id: string) => Promise<boolean>
   syncOutbox: () => number
   // admin actions
   addAccount: (account: UserAccount) => void
