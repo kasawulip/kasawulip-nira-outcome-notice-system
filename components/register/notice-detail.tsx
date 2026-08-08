@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -37,6 +36,7 @@ import {
   auditTrailFor,
   deliveryHistoryFor,
 } from "@/lib/mock-notices"
+import { useDataStore } from "@/components/data-store-context"
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -56,7 +56,8 @@ const CHANNEL_ICON = {
 } as const
 
 export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
-  const [caseStatus, setCaseStatus] = useState(notice.caseStatus)
+  const { updateCaseStatus } = useDataStore()
+  const caseStatus = notice.caseStatus
   const preview = noticeToPreview(notice)
   const audit = auditTrailFor(notice)
   const delivery = deliveryHistoryFor(notice)
@@ -258,7 +259,7 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
                     variant="outline"
                     className="justify-start"
                     onClick={() => {
-                      setCaseStatus("Resolved")
+                      updateCaseStatus(notice.id, "Resolved")
                       toast.success("Case resolved", { description: notice.clientName })
                     }}
                   >
@@ -271,7 +272,7 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
                     variant="outline"
                     className="justify-start"
                     onClick={() => {
-                      setCaseStatus("Escalated")
+                      updateCaseStatus(notice.id, "Escalated")
                       toast.warning("Case escalated", { description: "Forwarded for supervisor review." })
                     }}
                   >

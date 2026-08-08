@@ -38,6 +38,10 @@ export const SERVICES: ServiceDef[] = [
   { id: "other", name: "Other", icon: "ellipsis" },
 ]
 
+export function serviceIcon(id: ServiceId | string): string {
+  return SERVICES.find((s) => s.id === id)?.icon ?? "ellipsis"
+}
+
 export function serviceName(id: ServiceId | string): string {
   return SERVICES.find((s) => s.id === id)?.name ?? String(id)
 }
