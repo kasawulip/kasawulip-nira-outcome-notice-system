@@ -182,6 +182,21 @@ export function NoticeDetail({ notice }: { notice: NoticeRecord }) {
                   </InfoRow>
                   <InfoRow label="Action required">{notice.action}</InfoRow>
                   <InfoRow label="Where to go next">{notice.destination}</InfoRow>
+                  {notice.cardLocationType ? (
+                    <>
+                      <InfoRow label="Card collection location">{notice.cardLocationText ?? "—"}</InfoRow>
+                      {notice.cardBatchNumber ? (
+                        <InfoRow label="Card batch number">{notice.cardBatchNumber}</InfoRow>
+                      ) : null}
+                      {notice.cardLocationType === "LOCAL_OUTREACH" && notice.outreachContactStaffName ? (
+                        <InfoRow label="Officer / staff to contact">
+                          {[notice.outreachContactStaffName, notice.outreachContactStaffPhone]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </InfoRow>
+                      ) : null}
+                    </>
+                  ) : null}
                   {notice.referralEmail ? (
                     <InfoRow label="Referral email">
                       <span className="flex flex-wrap items-center gap-2">
