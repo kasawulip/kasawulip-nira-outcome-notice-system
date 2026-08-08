@@ -233,6 +233,10 @@ export interface NoticeRecord {
   caseStatus: CaseStatus
   priority: "High" | "Medium" | "Low"
   expectedCompletion?: string // ISO date
+  // Offline / sync metadata
+  syncState?: "synced" | "queued"
+  createdOffline?: boolean
+  resolvedAt?: string // ISO — set when case marked Resolved
 }
 
 // ---------------------------------------------------------------------------
@@ -315,4 +319,129 @@ export const COMPLAINTS_CONTACTS = {
   toll: "0800 100 100",
   email: "info@nira.go.ug",
   web: "www.nira.go.ug",
+}
+
+// ---------------------------------------------------------------------------
+// Roles, districts & accounts — exactly two roles, no intermediate tiers.
+// ---------------------------------------------------------------------------
+
+export type Role = "district-staff" | "systems-admin"
+
+export const ROLE_LABEL: Record<Role, string> = {
+  "district-staff": "District Staff",
+  "systems-admin": "Systems Admin",
+}
+
+export interface District {
+  id: string
+  name: string // matches the office string used on NoticeRecord.office
+  code: string
+}
+
+// Field districts (staff-assignable). Each maps 1:1 to an office string.
+export const DISTRICTS: District[] = [
+  { id: "makindye", name: "Makindye District Office", code: "MAK" },
+  { id: "kampala-central", name: "Kampala Central Office", code: "KLA" },
+  { id: "wakiso", name: "Wakiso District Office", code: "WAK" },
+  { id: "mukono", name: "Mukono District Office", code: "MUK" },
+]
+
+export function districtByName(name: string): District | undefined {
+  return DISTRICTS.find((d) => d.name === name)
+}
+
+export interface UserAccount {
+  id: string
+  name: string
+  title: string
+  role: Role
+  district: string // office/district name; "All Districts" for admin (national scope)
+  initials: string
+  active: boolean
+  email?: string
+}
+
+export const ALL_DISTRICTS = "All Districts"
+
+// Two demo accounts (one per role) used for quick sign-in.
+export const DEMO_ACCOUNTS: Record<"staff" | "admin", UserAccount> = {
+  staff: {
+    id: "acc-staff",
+    name: "Paul Kasawuli",
+    title: "Senior Registration Officer",
+    role: "district-staff",
+    district: "Makindye District Office",
+    initials: "PK",
+    active: true,
+    email: "p.kasawuli@nira.go.ug",
+  },
+  admin: {
+    id: "acc-admin",
+    name: "Miriam Achieng",
+    title: "Systems Administrator",
+    role: "systems-admin",
+    district: ALL_DISTRICTS,
+    initials: "MA",
+    active: true,
+    email: "m.achieng@nira.go.ug",
+  },
+}
+
+// Seed roster of officer accounts managed in the Admin panel.
+export const SEED_ACCOUNTS: UserAccount[] = [
+  DEMO_ACCOUNTS.admin,
+  DEMO_ACCOUNTS.staff,
+  {
+    id: "acc-2",
+    name: "Grace Nabbosa",
+    title: "Registration Officer",
+    role: "district-staff",
+    district: "Makindye District Office",
+    initials: "GN",
+    active: true,
+    email: "g.nabbosa@nira.go.ug",
+  },
+  {
+    id: "acc-3",
+    name: "John Okello",
+    title: "Registration Officer",
+    role: "district-staff",
+    district: "Kampala Central Office",
+    initials: "JO",
+    active: true,
+    email: "j.okello@nira.go.ug",
+  },
+  {
+    id: "acc-4",
+    name: "Amina Namusoke",
+    title: "Senior Registration Officer",
+    role: "district-staff",
+    district: "Wakiso District Office",
+    initials: "AN",
+    active: true,
+    email: "a.namusoke@nira.go.ug",
+  },
+  {
+    id: "acc-5",
+    name: "Peter Ochieng",
+    title: "Registration Assistant",
+    role: "district-staff",
+    district: "Mukono District Office",
+    initials: "PO",
+    active: false,
+    email: "p.ochieng@nira.go.ug",
+  },
+]
+
+// Delivery-channel availability, controlled by Systems Admin.
+export interface DeliveryChannelSettings {
+  sms: boolean
+  email: boolean
+  print: boolean
+}
+
+export const DEFAULT_CHANNEL_SETTINGS: DeliveryChannelSettings = {
+  sms: true,
+  email: true,
+  print: true,
 }

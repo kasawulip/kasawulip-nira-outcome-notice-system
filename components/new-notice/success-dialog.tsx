@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle2, Printer, FileText, Copy, FilePlus2, MessageSquare, Mail, FileCheck } from "lucide-react"
+import { CheckCircle2, CloudOff, Printer, FileText, Copy, FilePlus2, MessageSquare, Mail, FileCheck } from "lucide-react"
 import { toast } from "sonner"
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 export interface IssuedNotice {
   data: PreviewData
   deliveryMethod: DeliveryMethod
+  queued?: boolean
 }
 
 function DeliveryLine({
@@ -79,7 +80,7 @@ export function SuccessDialog({
   }, [open, issued?.data.noticeNumber])
 
   if (!issued) return null
-  const { data } = issued
+  const { data, queued } = issued
 
   return (
     <Dialog
@@ -89,13 +90,26 @@ export function SuccessDialog({
       }}
     >
       <DialogContent showCloseButton={false} className="max-w-lg gap-0 overflow-hidden p-0">
-        <div className="flex flex-col items-center gap-2 border-b border-border bg-success/10 px-6 py-5 text-center">
-          <span className="flex size-12 items-center justify-center rounded-full bg-success text-success-foreground">
-            <CheckCircle2 className="size-7" />
-          </span>
-          <DialogTitle className="text-lg font-semibold">Notice issued successfully.</DialogTitle>
-          <p className="font-mono text-sm font-semibold text-primary">{data.noticeNumber}</p>
-        </div>
+        {queued ? (
+          <div className="flex flex-col items-center gap-2 border-b border-border bg-warning/15 px-6 py-5 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full bg-warning text-warning-foreground">
+              <CloudOff className="size-7" />
+            </span>
+            <DialogTitle className="text-lg font-semibold">Saved &amp; queued offline.</DialogTitle>
+            <p className="font-mono text-sm font-semibold text-primary">{data.noticeNumber}</p>
+            <p className="text-xs text-muted-foreground">
+              This notice will be sent automatically once your connection is restored.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 border-b border-border bg-success/10 px-6 py-5 text-center">
+            <span className="flex size-12 items-center justify-center rounded-full bg-success text-success-foreground">
+              <CheckCircle2 className="size-7" />
+            </span>
+            <DialogTitle className="text-lg font-semibold">Notice issued successfully.</DialogTitle>
+            <p className="font-mono text-sm font-semibold text-primary">{data.noticeNumber}</p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-4 p-5">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -128,8 +142,8 @@ export function SuccessDialog({
                 icon={<MessageSquare />}
                 label="SMS notification"
                 target={data.phone}
-                status="Delivered"
-                pending={smsPending}
+                status={queued ? "Queued" : "Delivered"}
+                pending={queued ? false : smsPending}
               />
             ) : null}
             {sendsEmail ? (
@@ -137,15 +151,22 @@ export function SuccessDialog({
                 icon={<Mail />}
                 label="Email with PDF"
                 target={data.email}
-                status="Delivered"
-                pending={emailPending}
+                status={queued ? "Queued" : "Delivered"}
+                pending={queued ? false : emailPending}
               />
             ) : null}
-            <DeliveryLine icon={<FileCheck />} label="PDF notice" status="Delivered" pending={false} />
+            <DeliveryLine
+              icon={<FileCheck />}
+              label="PDF notice"
+              status={queued ? "Queued" : "Delivered"}
+              pending={false}
+            />
           </div>
 
           <p className="text-xs text-muted-foreground">
-            You can start the next notice immediately — delivery continues in the background.
+            {queued
+              ? "You can keep issuing notices offline — they sync automatically when you reconnect."
+              : "You can start the next notice immediately — delivery continues in the background."}
           </p>
         </div>
 

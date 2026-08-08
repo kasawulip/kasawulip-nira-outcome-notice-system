@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { Public_Sans, Source_Serif_4 } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { SessionProvider } from '@/components/session-context'
 import './globals.css'
 
 const publicSans = Public_Sans({
@@ -43,7 +44,9 @@ export default function RootLayout({
       className={`${publicSans.variable} ${sourceSerif.variable} bg-background`}
     >
       <body className="font-sans antialiased">
-        <TooltipProvider delay={200}>{children}</TooltipProvider>
+        <SessionProvider>
+          <TooltipProvider delay={200}>{children}</TooltipProvider>
+        </SessionProvider>
         <Toaster position="top-center" richColors />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
