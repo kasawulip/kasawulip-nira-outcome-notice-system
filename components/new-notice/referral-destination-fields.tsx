@@ -216,15 +216,16 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
 
   if (destination === REFERRAL_HQ_DESTINATION) {
     const dept = hqDepartmentById(value.departmentId)
-    const emailValue = value.email || dept?.email || ""
-    const emailOk = emailValue.length === 0 || isValidEmail(emailValue)
+    // Free-text: the officer types the receiving section/department email; it is
+    // never derived from master data.
+    const emailOk = value.email.length > 0 && isValidEmail(value.email)
 
-    // Collapsed summary once department + email are captured.
-    if (dept && emailValue && emailOk && !editing) {
+    // Collapsed summary once department + valid email are captured.
+    if (dept && emailOk && !editing) {
       return (
         <SummaryCard
           icon={<Building2 className="size-4" />}
-          lines={[`NIRA Headquarters · ${dept.name}`, emailValue]}
+          lines={[`NIRA Headquarters · ${dept.name}`, value.email]}
           onChange={() => setEditing(true)}
         />
       )
@@ -239,9 +240,10 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
           <Select
             value={value.departmentId}
             onValueChange={(v) => {
-              const next = hqDepartmentById(v ?? undefined)
-              // Auto-populate the official department email on selection.
-              onChange({ departmentId: v ?? "", email: next?.email ?? "" })
+              // Department selection no longer carries an email; the officer
+              // types the receiving address as free text below.
+              onChange({ departmentId: v ?? "" })
+              setEditing(true)
             }}
           >
             <SelectTrigger id="referral-dept" className="h-11 w-full sm:w-96">
@@ -268,19 +270,25 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
                 id="referral-email"
                 type="email"
                 inputMode="email"
-                className={cn("h-11 pl-9 text-base sm:w-96 md:text-sm", !emailOk && "border-destructive")}
-                value={emailValue}
+                autoCapitalize="none"
+                placeholder="example@nira.go.ug"
+                className={cn(
+                  "h-11 pl-9 text-base sm:w-96 md:text-sm",
+                  value.email.length > 0 && !emailOk && "border-destructive",
+                )}
+                value={value.email}
                 onChange={(e) => onChange({ email: e.target.value })}
               />
             </div>
-            {!emailOk ? (
+            {value.email.length > 0 && !emailOk ? (
               <FieldDescription className="text-destructive">Enter a valid email address.</FieldDescription>
             ) : (
               <FieldDescription>
-                Official address on file. A copy of this referral is emailed here when the notice is issued.
+                Type the receiving section/department email. A copy of this referral is emailed here when the notice is
+                issued.
               </FieldDescription>
             )}
-            {dept && emailValue && emailOk ? (
+            {dept && emailOk ? (
               <Button
                 type="button"
                 size="sm"

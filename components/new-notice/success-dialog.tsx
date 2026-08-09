@@ -78,8 +78,8 @@ export function SuccessDialog({
   const [emailPending, setEmailPending] = useState(true)
   const [sharing, setSharing] = useState(false)
 
-  const sendsSms = issued?.deliveryMethod !== "print"
-  const sendsEmail = issued?.deliveryMethod === "sms-email" && !!issued?.data.email
+  const sendsSms = issued?.deliveryMethod === "sms"
+  const sendsEmail = issued?.deliveryMethod === "email" && !!issued?.data.email
 
   useEffect(() => {
     if (!open) return
