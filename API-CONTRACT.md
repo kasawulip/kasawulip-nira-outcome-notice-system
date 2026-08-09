@@ -82,7 +82,7 @@ Role = "district-staff" | "systems-admin"
   referralDestinationType?: "DISTRICT_OFFICE" | "HEADQUARTERS" | "OTHER"
   referralOfficeId?: string     // -> Office.id (master data)
   referralDepartmentId?: string // -> HqDepartment.id (master data)
-  referralEmail?: string        // receiving email. DISTRICT_OFFICE: officer-typed free text (client-supplied). HEADQUARTERS: snapshot of department.email.
+  referralEmail?: string        // receiving email — officer-typed free text (client-supplied) for BOTH district-office and HQ-section referrals. Never derived from master data. Required whenever a referral is made.
   referralEmailStatus?: "not-required" | "pending" | "sent" | "failed"
   referralEmailSentAt?: string  // ISO
 
@@ -330,14 +330,14 @@ These endpoints back that page (see §10 for the full model).
    - District card path → `cardLocationText = "NIRA <name> District Office"`, `receivingOfficeEmail = <officer-typed free-text email>` (client-supplied), `cardBatchNumber`.
    - District office referral (destination = "Another NIRA District Office") → `referralEmail = <officer-typed free-text email>` (client-supplied).
    - Outreach card path → `cardLocationText = <free-text location>`, `outreachContactStaffName` (+ optional phone), `cardBatchNumber`.
-   - HQ department referral → `referralEmail = department.email` (still snapshotted from master data).
-4. Generate the PDF (`pdfStatus`).
+   - HQ department referral (destination = "NIRA Headquarters") → `referralEmail = <officer-typed free-text email>` (client-supplied). The department selection identifies the receiving section; the address itself is **typed per referral, never derived from master data**.
+4. Generate the PDF (`pdfStatus`). This PDF is the exact, immutable outcome-notice document issued to the client (identical to `GET /notices/:id/pdf`).
 5. Set initial delivery statuses per `deliveryMethod` and enabled channels.
-6. If there is a receiving referral email, send it and record `referralEmailStatus` (`pending` → `sent`/`failed`) and `referralEmailSentAt`.
-7. **A failed email must never lose the notice** — keep the record and mark `pending`/`failed` with an authorized resend available.
+6. **Mandatory referral auto-send:** for **every** referral (HQ section OR another NIRA district office), immediately after the notice is generated, automatically email the exact-copy PDF (step 4) to the officer-typed `referralEmail`. Record `referralEmailStatus` (`pending` → `sent`/`failed`) and `referralEmailSentAt`. This is not optional and not user-triggered — it fires on successful generation.
+7. **A failed email must never lose the notice** — keep the record and mark `pending`/`failed` with an authorized resend available (`POST /notices/:id/resend-referral-email`).
 
 ### Referral email content (must include)
-Notice Number · Client Full Name · NIN/Application Number · Client Phone · Referring Office · Referring Officer · Card Batch Number (if applicable) · Receiving Office/Department · Service Requested · Reason · referral date & time · **generated PDF attached**.
+Notice Number · Client Full Name · NIN/Application Number · Client Phone · Referring Office · Referring Officer · Card Batch Number (if applicable) · Receiving Office/Department · Service Requested · Reason · referral date & time · **the generated outcome-notice PDF attached, byte-for-byte identical to the client's issued notice**.
 
 Subject line for card-collection referrals:
 ```
@@ -372,6 +372,7 @@ for the client. The PDF is **immutable** once issued. See §10.
 - Required per service/reason pathway:
   - District card path → `cardLocationOfficeId` + `cardBatchNumber` + `receivingOfficeEmail` (officer-typed, valid email **format**; no master-data email lookup).
   - District office referral → `referralOfficeId` + `referralEmail` (officer-typed, valid email format).
+  - HQ section referral → `referralDepartmentId` + `referralEmail` (officer-typed, valid email format; not derived from the department).
   - Outreach card path → `cardLocationText` + `cardBatchNumber` + `outreachContactStaffName`.
 - The two card-collection reasons are **mutually exclusive**; reject a payload containing both.
 

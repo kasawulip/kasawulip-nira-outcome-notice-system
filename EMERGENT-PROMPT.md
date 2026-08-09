@@ -65,13 +65,16 @@ ENDPOINTS (minimum)
   paginated; auto-scoped by role), GET /notices/:id
 - POST /notices — issue a notice. Server validates, generates noticeNumber
   (<OFFICE-CODE>/<YYYY>/<sequential>), persists referral fields into the record
-  (office name + officer-typed receiving email + batch, or outreach location +
-  staff; HQ referrals snapshot the department email) so later master-data edits
+  (office/department name + officer-typed receiving email + batch, or outreach
+  location + staff — the receiving email is officer-typed free text for BOTH
+  district-office and HQ-section referrals) so later master-data edits
   never alter historic notices, sets initial delivery statuses,
-  starts PDF generation, and for referrals with a receiving email sends the
-  referral email and records referralEmailStatus/referralEmailSentAt. The notice
-  MUST be saved before the email is attempted; a failed email must never lose the
-  notice (mark pending/failed, keep the record).
+  starts PDF generation, and for EVERY referral (HQ section or another NIRA
+  district office) automatically emails the exact-copy notice PDF to the
+  officer-typed referralEmail immediately after generation, recording
+  referralEmailStatus/referralEmailSentAt. This auto-send is mandatory and not
+  user-triggered. The notice MUST be saved before the email is attempted; a failed
+  email must never lose the notice (mark pending/failed, keep the record).
 - PATCH /notices/:id/case-status — transition case status (validate allowed
   transitions).
 - POST /notices/:id/retry-delivery — re-attempt SMS/email delivery.
@@ -98,11 +101,16 @@ BUSINESS RULES
 - Card-collection PDF must state the exact card location, batch number, receiving
   office email (district path) or contact staff member (outreach path), and the
   next-step action — never a vague "go to another NIRA office."
-- District office email: the officer TYPES the receiving office email as free text
-  per referral (persisted as referralEmail / receivingOfficeEmail). Do NOT look it
-  up from master data and do NOT reject an office for lacking a stored email;
-  validate the officer-supplied address for format only. HQ department referrals
-  still use the department's stored email.
+- Receiving referral email (BOTH district-office AND HQ-section referrals): the
+  officer TYPES it as free text per referral (persisted as referralEmail /
+  receivingOfficeEmail). It is a required, captured field on every referral. Do NOT
+  look it up from master data (the HQ department selection only identifies the
+  section, not the address) and do NOT reject an office for lacking a stored email;
+  validate the officer-supplied address for format only.
+- Mandatory referral auto-send: immediately after a referral notice is generated,
+  the system MUST automatically email the exact-copy outcome-notice PDF (byte-for-
+  byte identical to the client's issued notice, same as GET /notices/:id/pdf) to the
+  officer-typed referralEmail. Not optional, not user-triggered.
 - Account credentials: new users start with default password "Welcome123" and
   mustChangePassword=true; the app is blocked until they change it at first login.
   Admin reset restores "Welcome123" and re-arms the flag. Hash passwords; never
