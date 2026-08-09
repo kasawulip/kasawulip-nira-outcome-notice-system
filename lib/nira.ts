@@ -458,6 +458,7 @@ export const DISTRICTS: District[] = [
   { id: "nakaseke", name: "Nakaseke District Office", code: "NSK" },
   { id: "luweero", name: "Luweero District Office", code: "LUW" },
   { id: "kawempe", name: "Kawempe District Office", code: "KAW" },
+  { id: "nakawa", name: "Nakawa District Office", code: "NAK" },
   { id: "rubaga", name: "Rubaga District Office", code: "RUB" },
   { id: "kayunga", name: "Kayunga District Office", code: "KAY" },
   { id: "buvuma", name: "Buvuma District Office", code: "BUV" },

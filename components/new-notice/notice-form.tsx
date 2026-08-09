@@ -183,6 +183,7 @@ export function NoticeForm() {
         if (d.cardLocation) {
           setCardLocation({
             officeId: d.cardLocation.officeId ?? "",
+            email: d.cardLocation.email ?? "",
             batch: d.cardLocation.batch ?? "",
             outreachText: d.cardLocation.outreachText ?? "",
             staffName: d.cardLocation.staffName ?? "",
@@ -281,11 +282,12 @@ export function NoticeForm() {
     reason:
       reasons.length > 0 &&
       (!otherReasonSelected || otherReason.trim().length > 2) &&
-      // District card path: exact office + batch + an office with a configured email.
+      // District card path: exact office + batch + a valid, officer-entered email.
       (!cardAtDistrict ||
         (cardLocation.officeId.length > 0 &&
           cardLocation.batch.trim().length > 0 &&
-          Boolean(referralLocationById(cardLocation.officeId)?.email))) &&
+          cardLocation.email.length > 0 &&
+          isValidEmail(cardLocation.email))) &&
       // Outreach card path: location + batch + contact staff member.
       (!cardAtOutreach ||
         (cardLocation.outreachText.trim().length > 2 &&
@@ -473,7 +475,7 @@ export function NoticeForm() {
         cardLocationType: "DISTRICT_OFFICE",
         cardLocationLabel: `NIRA – ${office.name} District Office`,
         cardBatchNumber: cardLocation.batch.trim() || undefined,
-        cardReceivingEmail: office.email,
+        cardReceivingEmail: cardLocation.email.trim() || undefined,
       }
     }
     if (cardAtOutreach) {
@@ -565,7 +567,7 @@ export function NoticeForm() {
     // district office for a card referral, else the HQ department for an HQ
     // destination referral. Card referrals to a district take precedence.
     const activeReferralEmail = cardAtDistrict
-      ? cardOffice?.email
+      ? cardLocation.email.trim() || undefined
       : isHqReferral
         ? referralEmail || hqDept?.email
         : undefined
@@ -603,7 +605,7 @@ export function NoticeForm() {
           ? cardLocation.outreachText || undefined
           : undefined,
       cardBatchNumber: cardLocationType ? cardLocation.batch.trim() || undefined : undefined,
-      receivingOfficeEmail: cardAtDistrict ? cardOffice?.email : undefined,
+      receivingOfficeEmail: cardAtDistrict ? cardLocation.email.trim() || undefined : undefined,
       outreachContactStaffName: cardAtOutreach ? cardLocation.staffName.trim() || undefined : undefined,
       outreachContactStaffId: cardAtOutreach ? cardLocation.staffId || undefined : undefined,
       outreachContactStaffPhone: cardAtOutreach ? cardLocation.staffPhone.trim() || undefined : undefined,
