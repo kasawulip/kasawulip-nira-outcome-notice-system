@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Check, ChevronsUpDown, Building2, Mail, Pencil } from "lucide-react"
+import { Check, ChevronsUpDown, Building2, Mail, Pencil, Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -53,9 +53,28 @@ interface Props {
 export function ReferralDestinationFields({ destination, value, onChange }: Props) {
   const [officeOpen, setOfficeOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [officeQuery, setOfficeQuery] = useState("")
 
   const activeOffices = useMemo(() => REFERRAL_LOCATIONS.filter((l) => l.active), [])
   const activeDepartments = useMemo(() => HQ_DEPARTMENTS.filter((d) => d.active), [])
+
+  // Region order as it appears in master data, used to group search results.
+  const regionOrder = useMemo(() => {
+    const seen: string[] = []
+    for (const l of activeOffices) if (!seen.includes(l.region)) seen.push(l.region)
+    return seen
+  }, [activeOffices])
+
+  // Search-first behaviour: only surface offices that match what the user has
+  // typed, so the dropdown never dumps the full 27-office list over the screen.
+  const officeSearch = officeQuery.trim().toLowerCase()
+  const officeGroups = useMemo(() => {
+    if (!officeSearch) return []
+    const matches = activeOffices.filter((l) => `${l.name} ${l.region}`.toLowerCase().includes(officeSearch))
+    return regionOrder
+      .map((region) => ({ region, items: matches.filter((m) => m.region === region) }))
+      .filter((g) => g.items.length > 0)
+  }, [activeOffices, regionOrder, officeSearch])
 
   if (destination === REFERRAL_DISTRICT_DESTINATION) {
     const selected = referralLocationById(value.officeId)
@@ -79,7 +98,13 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
         <FieldLabel htmlFor="referral-office-trigger">
           Select NIRA District Office <span className="text-destructive">*</span>
         </FieldLabel>
-        <Popover open={officeOpen} onOpenChange={setOfficeOpen}>
+        <Popover
+          open={officeOpen}
+          onOpenChange={(o) => {
+            setOfficeOpen(o)
+            if (!o) setOfficeQuery("")
+          }}
+        >
           <PopoverTrigger
             render={
               <Button
@@ -97,27 +122,47 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
             }
           />
           <PopoverContent className="w-72 p-0 sm:w-96" align="start">
-            <Command>
-              <CommandInput placeholder="Search district or division..." />
-              <CommandList>
-                <CommandEmpty>No matching office found.</CommandEmpty>
-                <CommandGroup>
-                  {activeOffices.map((loc) => (
-                    <CommandItem
-                      key={loc.id}
-                      value={`${loc.name} ${loc.region}`}
-                      onSelect={() => {
-                        onChange({ officeId: loc.id })
-                        setOfficeOpen(false)
-                        setEditing(false)
-                      }}
-                    >
-                      <Check className={cn("size-4", value.officeId === loc.id ? "opacity-100" : "opacity-0")} />
-                      <span className="flex-1">{loc.name}</span>
-                      <span className="text-xs text-muted-foreground">{loc.region}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
+            <Command shouldFilter={false}>
+              <CommandInput
+                value={officeQuery}
+                onValueChange={setOfficeQuery}
+                placeholder="Type a district or division..."
+              />
+              {/* Cap the height so results scroll within a bounded box instead of
+                  covering the screen; nothing renders until the user searches. */}
+              <CommandList className="max-h-56">
+                {!officeSearch ? (
+                  <div className="flex items-start gap-2 px-3 py-6 text-sm text-muted-foreground">
+                    <Search className="mt-0.5 size-4 shrink-0" />
+                    <span>
+                      Start typing to search {activeOffices.length} district &amp; division offices. Results are grouped
+                      by region.
+                    </span>
+                  </div>
+                ) : officeGroups.length === 0 ? (
+                  <CommandEmpty>No matching office found.</CommandEmpty>
+                ) : (
+                  officeGroups.map((group) => (
+                    <CommandGroup key={group.region} heading={`${group.region} region`}>
+                      {group.items.map((loc) => (
+                        <CommandItem
+                          key={loc.id}
+                          value={loc.id}
+                          onSelect={() => {
+                            onChange({ officeId: loc.id })
+                            setOfficeOpen(false)
+                            setOfficeQuery("")
+                            setEditing(false)
+                          }}
+                        >
+                          <Check className={cn("size-4", value.officeId === loc.id ? "opacity-100" : "opacity-0")} />
+                          <span className="flex-1">{loc.name}</span>
+                          <span className="text-xs text-muted-foreground">{loc.region}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  ))
+                )}
               </CommandList>
             </Command>
           </PopoverContent>
