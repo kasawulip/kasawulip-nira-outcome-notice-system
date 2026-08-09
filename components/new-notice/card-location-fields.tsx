@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, useId } from "react"
-import { Check, ChevronsUpDown, Building2, Mail, MapPin, User, Pencil, AlertTriangle, Search } from "lucide-react"
+import { Check, ChevronsUpDown, Building2, Mail, MapPin, User, Pencil, Search } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -16,10 +16,11 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { REFERRAL_LOCATIONS, referralLocationById } from "@/lib/nira"
+import { REFERRAL_LOCATIONS, referralLocationById, isValidEmail } from "@/lib/nira"
 
 export interface CardLocationValue {
   officeId: string
+  email: string
   batch: string
   outreachText: string
   staffName: string
@@ -74,9 +75,8 @@ export function CardLocationFields({ mode, value, onChange, staffSuggestions = [
 
   if (mode === "district") {
     const selected = referralLocationById(value.officeId)
-    const officeEmail = selected?.email
-    const emailConfigured = Boolean(officeEmail)
-    const complete = Boolean(selected && emailConfigured && value.batch.trim().length > 0)
+    const emailOk = value.email.length > 0 && isValidEmail(value.email)
+    const complete = Boolean(selected && emailOk && value.batch.trim().length > 0)
 
     if (complete && !editing) {
       return (
@@ -85,7 +85,7 @@ export function CardLocationFields({ mode, value, onChange, staffSuggestions = [
           heading="Card location"
           lines={[
             `NIRA ${selected!.name} District Office`,
-            `Batch ${value.batch} · ${officeEmail}`,
+            `Batch ${value.batch} · ${value.email}`,
           ]}
           onChange={() => setEditing(true)}
         />
@@ -185,35 +185,32 @@ export function CardLocationFields({ mode, value, onChange, staffSuggestions = [
 
         {selected ? (
           <Field>
-            <FieldLabel htmlFor="card-office-email">Receiving District Office Email</FieldLabel>
-            {emailConfigured ? (
-              <>
-                <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="card-office-email"
-                    readOnly
-                    className="h-11 cursor-default bg-muted pl-9 text-base sm:w-96 md:text-sm"
-                    value={officeEmail}
-                    aria-describedby="card-office-email-desc"
-                  />
-                </div>
-                <FieldDescription id="card-office-email-desc">
-                  Official address on file. The receiving office is emailed a copy of this referral when the notice is
-                  issued.
-                </FieldDescription>
-              </>
+            <FieldLabel htmlFor="card-office-email">
+              Receiving District Office Email <span className="text-destructive">*</span>
+            </FieldLabel>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="card-office-email"
+                type="email"
+                inputMode="email"
+                autoCapitalize="none"
+                placeholder="example@nira.go.ug"
+                className={cn(
+                  "h-11 pl-9 text-base sm:w-96 md:text-sm",
+                  value.email.length > 0 && !emailOk && "border-destructive",
+                )}
+                value={value.email}
+                onChange={(e) => onChange({ email: e.target.value })}
+                aria-describedby="card-office-email-desc"
+              />
+            </div>
+            {value.email.length > 0 && !emailOk ? (
+              <FieldDescription className="text-destructive">Enter a valid email address.</FieldDescription>
             ) : (
-              <div
-                role="alert"
-                className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-sm text-destructive"
-              >
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  No official email configured for this office. An authorised administrator must add it to the office
-                  master data before a card referral can be issued here.
-                </span>
-              </div>
+              <FieldDescription id="card-office-email-desc">
+                Type the receiving office email. A copy of this referral is emailed here when the notice is issued.
+              </FieldDescription>
             )}
           </Field>
         ) : null}

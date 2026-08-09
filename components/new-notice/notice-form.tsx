@@ -120,6 +120,7 @@ export function NoticeForm() {
   // Card-collection referral capture (see CardLocationFields).
   const emptyCardLocation: CardLocationValue = {
     officeId: "",
+    email: "",
     batch: "",
     outreachText: "",
     staffName: "",
@@ -399,7 +400,7 @@ export function NoticeForm() {
     setService(id as ServiceId)
     setReasons([])
     setOtherReason("")
-    setCardLocation({ officeId: "", batch: "", outreachText: "", staffName: "", staffId: "", staffPhone: "" })
+    setCardLocation({ officeId: "", email: "", batch: "", outreachText: "", staffName: "", staffId: "", staffPhone: "" })
     setActionEdited(false)
   }, [])
 
@@ -501,7 +502,7 @@ export function NoticeForm() {
     setService(null)
     setReasons([])
     setOtherReason("")
-    setCardLocation({ officeId: "", batch: "", outreachText: "", staffName: "", staffId: "", staffPhone: "" })
+    setCardLocation({ officeId: "", email: "", batch: "", outreachText: "", staffName: "", staffId: "", staffPhone: "" })
     setAction("")
     setActionEdited(false)
     setDestination("")

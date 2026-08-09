@@ -586,7 +586,8 @@ export interface ReferralLocation {
   name: string
   region: string
   active: boolean
-  /** Official office email from master data. May be absent (needs admin config). */
+  /** Deprecated for districts: office emails are entered as free text per
+   *  referral, never stored in master data. Kept optional for compatibility. */
   email?: string
 }
 
@@ -594,8 +595,8 @@ export interface ReferralLocation {
  * Master list of Uganda district offices a client can be referred to, grouped by
  * the six NIRA administrative regions. Built from a name+region seed so the full
  * national list stays maintainable; each entry gets a stable id (stored on the
- * referral so display names can change later without affecting past records) and
- * an official office email derived from the district name.
+ * referral so display names can change later without affecting past records).
+ * Office emails are entered per referral as free text, not stored here.
  */
 const UGANDA_DISTRICT_SEED: ReadonlyArray<{ name: string; region: string }> = [
   // Central
@@ -752,19 +753,15 @@ const officeSlug = (name: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
 
-const officeEmail = (name: string) =>
-  `${name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "")}@${NIRA_EMAIL_DOMAIN}`
-
+// District office emails are NOT hardcoded here: the officer enters the
+// receiving office email as free text at referral time (see
+// ReferralDestinationFields / CardLocationFields).
 export const REFERRAL_LOCATIONS: ReferralLocation[] = UGANDA_DISTRICT_SEED.map((d) => ({
   id: `loc-${officeSlug(d.name)}`,
   type: "DISTRICT_OFFICE",
   name: d.name,
   region: d.region,
   active: true,
-  email: officeEmail(d.name),
 }))
 
 export function referralLocationById(id: string | undefined): ReferralLocation | undefined {

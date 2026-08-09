@@ -78,26 +78,25 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
 
   if (destination === REFERRAL_DISTRICT_DESTINATION) {
     const selected = referralLocationById(value.officeId)
+    const emailOk = value.email.length > 0 && isValidEmail(value.email)
 
-    // Collapsed summary once an office is chosen (and not actively editing).
-    if (selected && !editing) {
+    // Collapsed summary once office + valid email captured (and not editing).
+    if (selected && emailOk && !editing) {
       return (
         <SummaryCard
           icon={<Building2 className="size-4" />}
-          lines={[`NIRA – ${selected.name} District Office`, `${selected.region} region`]}
-          onChange={() => {
-            setEditing(true)
-            setOfficeOpen(true)
-          }}
+          lines={[`NIRA – ${selected.name} District Office`, value.email]}
+          onChange={() => setEditing(true)}
         />
       )
     }
 
     return (
-      <Field className="mt-3">
-        <FieldLabel htmlFor="referral-office-trigger">
-          Select NIRA District Office <span className="text-destructive">*</span>
-        </FieldLabel>
+      <div className="mt-3 flex flex-col gap-3 rounded-lg border border-border bg-muted/30 p-3">
+        <Field>
+          <FieldLabel htmlFor="referral-office-trigger">
+            Select NIRA District Office <span className="text-destructive">*</span>
+          </FieldLabel>
         <Popover
           open={officeOpen}
           onOpenChange={(o) => {
@@ -152,7 +151,7 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
                             onChange({ officeId: loc.id })
                             setOfficeOpen(false)
                             setOfficeQuery("")
-                            setEditing(false)
+                            setEditing(true)
                           }}
                         >
                           <Check className={cn("size-4", value.officeId === loc.id ? "opacity-100" : "opacity-0")} />
@@ -166,11 +165,52 @@ export function ReferralDestinationFields({ destination, value, onChange }: Prop
               </CommandList>
             </Command>
           </PopoverContent>
-        </Popover>
-        <FieldDescription>
-          The referral cannot be issued until the exact receiving office is selected.
-        </FieldDescription>
-      </Field>
+          </Popover>
+        </Field>
+
+        {selected ? (
+          <Field>
+            <FieldLabel htmlFor="referral-district-email">
+              Receiving District Office Email <span className="text-destructive">*</span>
+            </FieldLabel>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="referral-district-email"
+                type="email"
+                inputMode="email"
+                autoCapitalize="none"
+                placeholder="example@nira.go.ug"
+                className={cn(
+                  "h-11 pl-9 text-base sm:w-96 md:text-sm",
+                  value.email.length > 0 && !emailOk && "border-destructive",
+                )}
+                value={value.email}
+                onChange={(e) => onChange({ email: e.target.value })}
+              />
+            </div>
+            {value.email.length > 0 && !emailOk ? (
+              <FieldDescription className="text-destructive">Enter a valid email address.</FieldDescription>
+            ) : (
+              <FieldDescription>
+                Type the receiving office email. A copy of this referral is emailed here when the notice is issued.
+              </FieldDescription>
+            )}
+            {selected && emailOk ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="mt-1 h-8 w-fit text-xs"
+                onClick={() => setEditing(false)}
+              >
+                <Check data-icon="inline-start" />
+                Confirm destination
+              </Button>
+            ) : null}
+          </Field>
+        ) : null}
+      </div>
     )
   }
 
