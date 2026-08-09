@@ -481,9 +481,43 @@ export interface UserAccount {
   initials: string
   active: boolean
   email?: string
+  /** Prototype credential (stored in plaintext; a real backend would hash it). */
+  password?: string
+  /** Forces a password change on next sign-in (true for newly-created / reset accounts). */
+  mustChangePassword?: boolean
 }
 
 export const ALL_DISTRICTS = "All Districts"
+
+/** Default password every new / reset account starts with, then must change. */
+export const DEFAULT_PASSWORD = "Welcome123"
+
+/** localStorage key for the managed account roster (shared by session + data store). */
+export const ACCOUNTS_STORAGE_KEY = "nira.accounts"
+
+/** Backfill auth fields so legacy/seed accounts always have usable credentials. */
+export function withAuthDefaults(account: UserAccount): UserAccount {
+  return {
+    ...account,
+    password: account.password ?? DEFAULT_PASSWORD,
+    mustChangePassword: account.mustChangePassword ?? false,
+  }
+}
+
+export type AuthResult =
+  | { ok: true; account: UserAccount }
+  | { ok: false; reason: "not-found" | "bad-password" | "inactive" }
+
+/** Match an email + password against the roster (case-insensitive email). */
+export function authenticate(accounts: UserAccount[], email: string, password: string): AuthResult {
+  const target = email.trim().toLowerCase()
+  const found = accounts.find((a) => (a.email ?? "").trim().toLowerCase() === target)
+  if (!found) return { ok: false, reason: "not-found" }
+  if (!found.active) return { ok: false, reason: "inactive" }
+  const expected = found.password ?? DEFAULT_PASSWORD
+  if (password !== expected) return { ok: false, reason: "bad-password" }
+  return { ok: true, account: withAuthDefaults(found) }
+}
 
 // Two demo accounts (one per role) used for quick sign-in.
 export const DEMO_ACCOUNTS: Record<"staff" | "admin", UserAccount> = {

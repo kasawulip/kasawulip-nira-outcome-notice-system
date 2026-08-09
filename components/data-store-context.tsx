@@ -5,6 +5,7 @@ import {
   ALL_DISTRICTS,
   DEFAULT_CHANNEL_SETTINGS,
   SEED_ACCOUNTS,
+  withAuthDefaults,
   generateRetrievalToken,
   type CaseStatus,
   type DeliveryChannelSettings,
@@ -93,7 +94,7 @@ export function DataStoreProvider({ children }: { children: React.ReactNode }) {
     // every issued notice is retrievable and verifiable.
     setNotices(seeded.map(withRetrievalDefaults))
     setOutbox(load<NoticeRecord[]>(OUTBOX_KEY, []).map(withRetrievalDefaults))
-    setAccounts(load<UserAccount[]>(ACCOUNTS_KEY, SEED_ACCOUNTS))
+    setAccounts(load<UserAccount[]>(ACCOUNTS_KEY, SEED_ACCOUNTS).map(withAuthDefaults))
     setChannelSettings(load<DeliveryChannelSettings>(CHANNELS_KEY, DEFAULT_CHANNEL_SETTINGS))
     setReady(true)
   }, [])

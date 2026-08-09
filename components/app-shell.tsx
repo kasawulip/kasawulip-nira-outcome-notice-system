@@ -9,9 +9,10 @@ import { BottomNav } from "@/components/bottom-nav"
 import { SyncBridge } from "@/components/sync-bridge"
 import { Spinner } from "@/components/ui/spinner"
 import { useSession } from "@/components/session-context"
+import { ForcePasswordChange } from "@/components/auth/force-password-change"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { account, ready } = useSession()
+  const { account, ready, mustChangePassword } = useSession()
   const router = useRouter()
 
   useEffect(() => {
@@ -24,6 +25,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Spinner className="size-6 text-primary" />
       </div>
     )
+  }
+
+  // First-time / reset accounts must set a new password before using the app.
+  if (mustChangePassword) {
+    return <ForcePasswordChange />
   }
 
   return (

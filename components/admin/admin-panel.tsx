@@ -16,10 +16,19 @@ import {
   AlertTriangle,
   Check,
   ChevronsUpDown,
+  KeyRound,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel, FieldDescription } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -53,7 +62,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { StatCard } from "@/components/stat-card"
-import { DISTRICTS, ROLE_LABEL, type Role, type UserAccount } from "@/lib/nira"
+import { DEFAULT_PASSWORD, DISTRICTS, ROLE_LABEL, type Role, type UserAccount } from "@/lib/nira"
 import { useDataStore } from "@/components/data-store-context"
 
 function initialsFor(name: string) {
@@ -109,6 +118,7 @@ export function AdminPanel() {
     outbox,
     channelSettings,
     addAccount,
+    updateAccount,
     toggleAccountActive,
     updateChannelSettings,
   } = useDataStore()
@@ -119,6 +129,7 @@ export function AdminPanel() {
   const [newEmail, setNewEmail] = useState("")
   const [districtOpen, setDistrictOpen] = useState(false)
   const [districtQuery, setDistrictQuery] = useState("")
+  const [resetTarget, setResetTarget] = useState<UserAccount | null>(null)
 
   // Search-first filtering so the assignable-district list stays compact and
   // never expands to cover the account form.
@@ -157,11 +168,21 @@ export function AdminPanel() {
       initials: initialsFor(newName.trim()),
       active: true,
       email: newEmail.trim() || undefined,
+      // New accounts start on the shared default and must change it at first sign-in.
+      password: DEFAULT_PASSWORD,
+      mustChangePassword: true,
     }
     addAccount(account)
     setNewName("")
     setNewEmail("")
-    toast.success(`${account.name} added as ${ROLE_LABEL[newRole]}`)
+    toast.success(`${account.name} added. Default password: ${DEFAULT_PASSWORD}`)
+  }
+
+  function confirmReset() {
+    if (!resetTarget) return
+    updateAccount(resetTarget.id, { password: DEFAULT_PASSWORD, mustChangePassword: true })
+    toast.success(`Password for ${resetTarget.name} reset to ${DEFAULT_PASSWORD}`)
+    setResetTarget(null)
   }
 
   const districtCounts = useMemo(() => {
@@ -232,23 +253,36 @@ export function AdminPanel() {
                             {a.district}
                           </TableCell>
                           <TableCell className="pr-6 text-right">
-                            <button
-                              type="button"
-                              onClick={() => toggleAccountActive(a.id)}
-                              className="inline-flex items-center gap-2 text-sm"
-                              aria-label={`Toggle ${a.name} ${a.active ? "off" : "on"}`}
-                            >
-                              <span
-                                className={
-                                  a.active
-                                    ? "size-2 rounded-full bg-success"
-                                    : "size-2 rounded-full bg-muted-foreground/40"
-                                }
-                              />
-                              <span className={a.active ? "text-foreground" : "text-muted-foreground"}>
-                                {a.active ? "Active" : "Disabled"}
-                              </span>
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleAccountActive(a.id)}
+                                className="inline-flex items-center gap-2 text-sm"
+                                aria-label={`Toggle ${a.name} ${a.active ? "off" : "on"}`}
+                              >
+                                <span
+                                  className={
+                                    a.active
+                                      ? "size-2 rounded-full bg-success"
+                                      : "size-2 rounded-full bg-muted-foreground/40"
+                                  }
+                                />
+                                <span className={a.active ? "text-foreground" : "text-muted-foreground"}>
+                                  {a.active ? "Active" : "Disabled"}
+                                </span>
+                              </button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 gap-1.5 px-2 text-muted-foreground"
+                                onClick={() => setResetTarget(a)}
+                              >
+                                <KeyRound className="size-3.5" />
+                                <span className="hidden sm:inline">Reset password</span>
+                                <span className="sr-only sm:hidden">Reset password for {a.name}</span>
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -394,11 +428,16 @@ export function AdminPanel() {
                   )}
                 </FieldGroup>
               </CardContent>
-              <CardFooter>
+              <CardFooter className="flex-col items-stretch gap-2">
                 <Button className="w-full" onClick={addOfficer}>
                   <Plus data-icon="inline-start" />
                   Add account
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  New accounts start with the default password{" "}
+                  <span className="font-medium text-foreground">{DEFAULT_PASSWORD}</span> and are prompted to change it
+                  at first sign-in.
+                </p>
               </CardFooter>
             </Card>
           </div>
@@ -548,6 +587,33 @@ export function AdminPanel() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={resetTarget !== null} onOpenChange={(open) => !open && setResetTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset password?</DialogTitle>
+            <DialogDescription>
+              {resetTarget ? (
+                <>
+                  This resets{" "}
+                  <span className="font-medium text-foreground">{resetTarget.name}</span>&apos;s password to the
+                  default <span className="font-medium text-foreground">{DEFAULT_PASSWORD}</span>. They will be
+                  required to set a new password the next time they sign in.
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmReset}>
+              <KeyRound data-icon="inline-start" />
+              Reset to {DEFAULT_PASSWORD}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
