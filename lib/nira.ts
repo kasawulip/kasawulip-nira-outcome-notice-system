@@ -447,11 +447,24 @@ export interface District {
 }
 
 // Field districts (staff-assignable). Each maps 1:1 to an office string.
+// Existing four kept verbatim so previously-assigned staff/notices stay mapped;
+// the rest are the additional Central-region offices requested for assignment.
 export const DISTRICTS: District[] = [
   { id: "makindye", name: "Makindye District Office", code: "MAK" },
   { id: "kampala-central", name: "Kampala Central Office", code: "KLA" },
   { id: "wakiso", name: "Wakiso District Office", code: "WAK" },
   { id: "mukono", name: "Mukono District Office", code: "MUK" },
+  { id: "nakasongola", name: "Nakasongola District Office", code: "NSG" },
+  { id: "nakaseke", name: "Nakaseke District Office", code: "NSK" },
+  { id: "luweero", name: "Luweero District Office", code: "LUW" },
+  { id: "kawempe", name: "Kawempe District Office", code: "KAW" },
+  { id: "rubaga", name: "Rubaga District Office", code: "RUB" },
+  { id: "kayunga", name: "Kayunga District Office", code: "KAY" },
+  { id: "buvuma", name: "Buvuma District Office", code: "BUV" },
+  { id: "buikwe", name: "Buikwe District Office", code: "BUI" },
+  { id: "gomba", name: "Gomba District Office", code: "GOM" },
+  { id: "mpigi", name: "Mpigi District Office", code: "MPI" },
+  { id: "butambala", name: "Butambala District Office", code: "BUT" },
 ]
 
 export function districtByName(name: string): District | undefined {

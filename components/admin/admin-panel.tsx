@@ -14,6 +14,8 @@ import {
   CloudOff,
   CheckCircle2,
   AlertTriangle,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -32,6 +34,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+} from "@/components/ui/command"
+import { cn } from "@/lib/utils"
 import {
   Table,
   TableBody,
@@ -105,6 +117,19 @@ export function AdminPanel() {
   const [newRole, setNewRole] = useState<Role>("district-staff")
   const [newDistrict, setNewDistrict] = useState<string>(DISTRICTS[0].name)
   const [newEmail, setNewEmail] = useState("")
+  const [districtOpen, setDistrictOpen] = useState(false)
+  const [districtQuery, setDistrictQuery] = useState("")
+
+  // Search-first filtering so the assignable-district list stays compact and
+  // never expands to cover the account form.
+  const districtSearch = districtQuery.trim().toLowerCase()
+  const districtMatches = useMemo(
+    () =>
+      districtSearch
+        ? DISTRICTS.filter((d) => `${d.name} ${d.code}`.toLowerCase().includes(districtSearch))
+        : DISTRICTS,
+    [districtSearch],
+  )
 
   const admins = accounts.filter((a) => a.role === "systems-admin").length
   const staff = accounts.filter((a) => a.role === "district-staff").length
@@ -301,18 +326,65 @@ export function AdminPanel() {
                   {newRole === "district-staff" ? (
                     <Field>
                       <FieldLabel>Assigned district</FieldLabel>
-                      <Select value={newDistrict} onValueChange={(v) => setNewDistrict(v ?? newDistrict)}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DISTRICTS.map((d) => (
-                            <SelectItem key={d.id} value={d.name}>
-                              {d.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover
+                        open={districtOpen}
+                        onOpenChange={(o) => {
+                          setDistrictOpen(o)
+                          if (!o) setDistrictQuery("")
+                        }}
+                      >
+                        <PopoverTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={districtOpen}
+                              className="h-11 w-full justify-between font-normal"
+                            >
+                              <span className={cn(!newDistrict && "text-muted-foreground")}>
+                                {newDistrict || "Select district..."}
+                              </span>
+                              <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+                            </Button>
+                          }
+                        />
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] min-w-72 p-0" align="start">
+                          <Command shouldFilter={false}>
+                            <CommandInput
+                              value={districtQuery}
+                              onValueChange={setDistrictQuery}
+                              placeholder="Search district..."
+                            />
+                            {/* Capped height keeps the list scrollable instead of
+                                pushing the account form off-screen. */}
+                            <CommandList className="max-h-52">
+                              {districtMatches.length === 0 ? (
+                                <CommandEmpty>No matching district found.</CommandEmpty>
+                              ) : (
+                                <CommandGroup>
+                                  {districtMatches.map((d) => (
+                                    <CommandItem
+                                      key={d.id}
+                                      value={d.id}
+                                      onSelect={() => {
+                                        setNewDistrict(d.name)
+                                        setDistrictOpen(false)
+                                        setDistrictQuery("")
+                                      }}
+                                    >
+                                      <Check
+                                        className={cn("size-4", newDistrict === d.name ? "opacity-100" : "opacity-0")}
+                                      />
+                                      <span className="flex-1">{d.name}</span>
+                                      <span className="text-xs text-muted-foreground">{d.code}</span>
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <FieldDescription>Staff only see notices for this district.</FieldDescription>
                     </Field>
                   ) : (
