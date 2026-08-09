@@ -578,47 +578,181 @@ export interface ReferralLocation {
 }
 
 /**
- * Approved list of NIRA District/Division offices in Uganda, including the
- * Kampala Capital City divisions. Each has a stable id stored on the referral
- * so display names can be updated later without affecting past records. The
- * `email` is the centrally maintained official office address; a few offices
- * intentionally have none to exercise the "no official email configured" path.
+ * Master list of Uganda district offices a client can be referred to, grouped by
+ * the six NIRA administrative regions. Built from a name+region seed so the full
+ * national list stays maintainable; each entry gets a stable id (stored on the
+ * referral so display names can change later without affecting past records) and
+ * an official office email derived from the district name.
  */
-export const REFERRAL_LOCATIONS: ReferralLocation[] = [
-  // Kampala Capital City divisions
-  { id: "loc-kla-central", type: "DISTRICT_OFFICE", name: "Central Division", region: "Kampala", active: true, email: `central.division@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-kla-kawempe", type: "DISTRICT_OFFICE", name: "Kawempe Division", region: "Kampala", active: true, email: `kawempe.division@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-kla-makindye", type: "DISTRICT_OFFICE", name: "Makindye Division", region: "Kampala", active: true, email: `makindye.division@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-kla-nakawa", type: "DISTRICT_OFFICE", name: "Nakawa Division", region: "Kampala", active: true, email: `nakawa.division@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-kla-rubaga", type: "DISTRICT_OFFICE", name: "Rubaga Division", region: "Kampala", active: true, email: `rubaga.division@${NIRA_EMAIL_DOMAIN}` },
-  // Central region districts
-  { id: "loc-wakiso", type: "DISTRICT_OFFICE", name: "Wakiso", region: "Central", active: true, email: `wakiso@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-mukono", type: "DISTRICT_OFFICE", name: "Mukono", region: "Central", active: true, email: `mukono@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-mpigi", type: "DISTRICT_OFFICE", name: "Mpigi", region: "Central", active: true, email: `mpigi@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-luwero", type: "DISTRICT_OFFICE", name: "Luwero", region: "Central", active: true, email: `luwero@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-masaka", type: "DISTRICT_OFFICE", name: "Masaka", region: "Central", active: true, email: `masaka@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-mubende", type: "DISTRICT_OFFICE", name: "Mubende", region: "Central", active: true, email: `mubende@${NIRA_EMAIL_DOMAIN}` },
-  // Eastern region
-  { id: "loc-jinja", type: "DISTRICT_OFFICE", name: "Jinja City", region: "Eastern", active: true, email: `jinja@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-mbale", type: "DISTRICT_OFFICE", name: "Mbale City", region: "Eastern", active: true, email: `mbale@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-soroti", type: "DISTRICT_OFFICE", name: "Soroti City", region: "Eastern", active: true, email: `soroti@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-tororo", type: "DISTRICT_OFFICE", name: "Tororo", region: "Eastern", active: true, email: `tororo@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-iganga", type: "DISTRICT_OFFICE", name: "Iganga", region: "Eastern", active: true, email: `iganga@${NIRA_EMAIL_DOMAIN}` },
-  // Northern region
-  { id: "loc-gulu", type: "DISTRICT_OFFICE", name: "Gulu City", region: "Northern", active: true, email: `gulu@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-lira", type: "DISTRICT_OFFICE", name: "Lira City", region: "Northern", active: true, email: `lira@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-arua", type: "DISTRICT_OFFICE", name: "Arua City", region: "Northern", active: true, email: `arua@${NIRA_EMAIL_DOMAIN}` },
-  // Master data gap on purpose: no official email configured yet.
-  { id: "loc-kitgum", type: "DISTRICT_OFFICE", name: "Kitgum", region: "Northern", active: true },
-  { id: "loc-moroto", type: "DISTRICT_OFFICE", name: "Moroto", region: "Northern", active: true },
-  // Western region
-  { id: "loc-mbarara", type: "DISTRICT_OFFICE", name: "Mbarara City", region: "Western", active: true, email: `mbarara@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-fortportal", type: "DISTRICT_OFFICE", name: "Fort Portal City", region: "Western", active: true, email: `fortportal@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-hoima", type: "DISTRICT_OFFICE", name: "Hoima City", region: "Western", active: true, email: `hoima@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-kabale", type: "DISTRICT_OFFICE", name: "Kabale", region: "Western", active: true, email: `kabale@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-kasese", type: "DISTRICT_OFFICE", name: "Kasese", region: "Western", active: true, email: `kasese@${NIRA_EMAIL_DOMAIN}` },
-  { id: "loc-bushenyi", type: "DISTRICT_OFFICE", name: "Bushenyi", region: "Western", active: true, email: `bushenyi@${NIRA_EMAIL_DOMAIN}` },
+const UGANDA_DISTRICT_SEED: ReadonlyArray<{ name: string; region: string }> = [
+  // Central
+  { name: "Kampala Central", region: "Central" },
+  { name: "Kawempe", region: "Central" },
+  { name: "Makindye", region: "Central" },
+  { name: "Rubaga", region: "Central" },
+  { name: "Nakawa", region: "Central" },
+  { name: "Wakiso", region: "Central" },
+  { name: "Mukono", region: "Central" },
+  { name: "Luweero", region: "Central" },
+  { name: "Buikwe", region: "Central" },
+  { name: "Nakasongola", region: "Central" },
+  { name: "Gomba", region: "Central" },
+  { name: "Butambala", region: "Central" },
+  { name: "Kayunga", region: "Central" },
+  { name: "Mpigi", region: "Central" },
+  { name: "Nakaseke", region: "Central" },
+  { name: "Buvuma", region: "Central" },
+  // Mid Western
+  { name: "Kasese", region: "Mid Western" },
+  { name: "Mubende", region: "Mid Western" },
+  { name: "Kasanda", region: "Mid Western" },
+  { name: "Hoima", region: "Mid Western" },
+  { name: "Kikuube", region: "Mid Western" },
+  { name: "Kibaale", region: "Mid Western" },
+  { name: "Kabarole", region: "Mid Western" },
+  { name: "Bunyangabu", region: "Mid Western" },
+  { name: "Kyenjojo", region: "Mid Western" },
+  { name: "Mityana", region: "Mid Western" },
+  { name: "Kyegegwa", region: "Mid Western" },
+  { name: "Kamwenge", region: "Mid Western" },
+  { name: "Kitagwenda", region: "Mid Western" },
+  { name: "Kiryandongo", region: "Mid Western" },
+  { name: "Masindi", region: "Mid Western" },
+  { name: "Kyankwanzi", region: "Mid Western" },
+  { name: "Kagadi", region: "Mid Western" },
+  { name: "Kiboga", region: "Mid Western" },
+  { name: "Kakumiro", region: "Mid Western" },
+  { name: "Buliisa", region: "Mid Western" },
+  { name: "Ntoroko", region: "Mid Western" },
+  { name: "Ibanda", region: "Mid Western" },
+  { name: "Bundibugyo", region: "Mid Western" },
+  // Eastern
+  { name: "Iganga", region: "Eastern" },
+  { name: "Jinja", region: "Eastern" },
+  { name: "Mbale", region: "Eastern" },
+  { name: "Tororo", region: "Eastern" },
+  { name: "Mayuge", region: "Eastern" },
+  { name: "Kamuli", region: "Eastern" },
+  { name: "Bugiri", region: "Eastern" },
+  { name: "Pallisa", region: "Eastern" },
+  { name: "Busia", region: "Eastern" },
+  { name: "Manafwa", region: "Eastern" },
+  { name: "Sironko", region: "Eastern" },
+  { name: "Buyende", region: "Eastern" },
+  { name: "Namayingo", region: "Eastern" },
+  { name: "Kaliro", region: "Eastern" },
+  { name: "Luuka", region: "Eastern" },
+  { name: "Budaka", region: "Eastern" },
+  { name: "Kibuku", region: "Eastern" },
+  { name: "Butaleja", region: "Eastern" },
+  { name: "Namutumba", region: "Eastern" },
+  { name: "Namisindwa", region: "Eastern" },
+  { name: "Butebo", region: "Eastern" },
+  { name: "Bugweri", region: "Eastern" },
+  { name: "Bulambuli", region: "Eastern" },
+  { name: "Bududa", region: "Eastern" },
+  { name: "Kapchorwa", region: "Eastern" },
+  { name: "Bukwo", region: "Eastern" },
+  { name: "Kween", region: "Eastern" },
+  // Western
+  { name: "Mbarara", region: "Western" },
+  { name: "Ntungamo", region: "Western" },
+  { name: "Kabale", region: "Western" },
+  { name: "Rakai", region: "Western" },
+  { name: "Kyotera", region: "Western" },
+  { name: "Isingiro", region: "Western" },
+  { name: "Masaka", region: "Western" },
+  { name: "Kisoro", region: "Western" },
+  { name: "Lwengo", region: "Western" },
+  { name: "Rukungiri", region: "Western" },
+  { name: "Kiruhura", region: "Western" },
+  { name: "Kazo", region: "Western" },
+  { name: "Kanungu", region: "Western" },
+  { name: "Ssembabule", region: "Western" },
+  { name: "Bushenyi", region: "Western" },
+  { name: "Mitooma", region: "Western" },
+  { name: "Sheema", region: "Western" },
+  { name: "Kalungu", region: "Western" },
+  { name: "Rubanda", region: "Western" },
+  { name: "Rukiga", region: "Western" },
+  { name: "Bukomansimbi", region: "Western" },
+  { name: "Rubirizi", region: "Western" },
+  { name: "Buhweju", region: "Western" },
+  { name: "Lyantonde", region: "Western" },
+  { name: "Rwampara", region: "Western" },
+  { name: "Kalangala", region: "Western" },
+  // North Eastern
+  { name: "Abim", region: "North Eastern" },
+  { name: "Serere", region: "North Eastern" },
+  { name: "Soroti", region: "North Eastern" },
+  { name: "Kumi", region: "North Eastern" },
+  { name: "Amuria", region: "North Eastern" },
+  { name: "Alebtong", region: "North Eastern" },
+  { name: "Kaberamaido", region: "North Eastern" },
+  { name: "Bukedea", region: "North Eastern" },
+  { name: "Katakwi", region: "North Eastern" },
+  { name: "Dokolo", region: "North Eastern" },
+  { name: "Agago", region: "North Eastern" },
+  { name: "Ngora", region: "North Eastern" },
+  { name: "Amolatar", region: "North Eastern" },
+  { name: "Kalaki", region: "North Eastern" },
+  { name: "Kotido", region: "North Eastern" },
+  { name: "Kaabong", region: "North Eastern" },
+  { name: "Nakapiripirit", region: "North Eastern" },
+  { name: "Otuke", region: "North Eastern" },
+  { name: "Karenga", region: "North Eastern" },
+  { name: "Napak", region: "North Eastern" },
+  { name: "Kapelebyong", region: "North Eastern" },
+  { name: "Moroto", region: "North Eastern" },
+  { name: "Amudat", region: "North Eastern" },
+  { name: "Nabilatuk", region: "North Eastern" },
+  // North Western
+  { name: "Apac", region: "North Western" },
+  { name: "Kwania", region: "North Western" },
+  { name: "Oyam", region: "North Western" },
+  { name: "Arua", region: "North Western" },
+  { name: "Madi-Okollo", region: "North Western" },
+  { name: "Terego", region: "North Western" },
+  { name: "Nebbi", region: "North Western" },
+  { name: "Pakwach", region: "North Western" },
+  { name: "Lira", region: "North Western" },
+  { name: "Gulu", region: "North Western" },
+  { name: "Yumbe", region: "North Western" },
+  { name: "Zombo", region: "North Western" },
+  { name: "Koboko", region: "North Western" },
+  { name: "Maracha", region: "North Western" },
+  { name: "Kitgum", region: "North Western" },
+  { name: "Adjumani", region: "North Western" },
+  { name: "Pader", region: "North Western" },
+  { name: "Amuru", region: "North Western" },
+  { name: "Lamwo", region: "North Western" },
+  { name: "Moyo", region: "North Western" },
+  { name: "Obongi", region: "North Western" },
+  { name: "Nwoya", region: "North Western" },
+  { name: "Omoro", region: "North Western" },
+  { name: "Kole", region: "North Western" },
 ]
+
+const officeSlug = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+const officeEmail = (name: string) =>
+  `${name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")}@${NIRA_EMAIL_DOMAIN}`
+
+export const REFERRAL_LOCATIONS: ReferralLocation[] = UGANDA_DISTRICT_SEED.map((d) => ({
+  id: `loc-${officeSlug(d.name)}`,
+  type: "DISTRICT_OFFICE",
+  name: d.name,
+  region: d.region,
+  active: true,
+  email: officeEmail(d.name),
+}))
 
 export function referralLocationById(id: string | undefined): ReferralLocation | undefined {
   if (!id) return undefined
