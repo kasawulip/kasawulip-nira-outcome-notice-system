@@ -197,8 +197,8 @@ export const OFFICERS = [
 ] as const
 
 export const DELIVERY_METHODS = [
-  { id: "sms", label: "SMS only" },
-  { id: "sms-email", label: "SMS and email" },
+  { id: "sms", label: "SMS" },
+  { id: "email", label: "Email" },
   { id: "print", label: "Print copy" },
 ] as const
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number]["id"]
@@ -597,7 +597,10 @@ export interface DeliveryChannelSettings {
 }
 
 export const DEFAULT_CHANNEL_SETTINGS: DeliveryChannelSettings = {
-  sms: true,
+  // No SMS gateway is connected yet, so the SMS channel starts disabled. The
+  // delivery-method picker still shows an SMS tile, but it renders faded and
+  // cannot be selected until a gateway is wired up.
+  sms: false,
   email: true,
   print: true,
 }

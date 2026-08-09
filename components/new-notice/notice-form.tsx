@@ -111,7 +111,8 @@ export function NoticeForm() {
   const [email, setEmail] = useState("")
   const [nin, setNin] = useState("")
   const [showNin, setShowNin] = useState(false)
-  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("sms")
+  // SMS has no gateway yet, so email is the default deliverable channel.
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("email")
 
   // ----- Service / reasons / action
   const [service, setService] = useState<ServiceId | null>(null)
@@ -169,7 +170,7 @@ export function NoticeForm() {
         setName(d.name ?? "")
         setEmail(d.email ?? "")
         setNin(d.nin ?? "")
-        setDeliveryMethod(d.deliveryMethod ?? "sms")
+        setDeliveryMethod(d.deliveryMethod ?? "email")
         setService(d.service ?? null)
         setReasons(d.reasons ?? [])
         setOtherReason(d.otherReason ?? "")
@@ -209,9 +210,14 @@ export function NoticeForm() {
   const phoneError = phone.length > 0 && !phoneValid
   const emailError = email.length > 0 && !emailValid
 
+  // Never leave a disabled channel selected: SMS has no gateway, and email
+  // needs a valid address. Fall back to print, which is always available.
   useEffect(() => {
-    if (deliveryMethod === "sms-email" && !emailValid) setDeliveryMethod("sms")
-  }, [emailValid, deliveryMethod])
+    const smsOk = channelSettings.sms
+    const emailOk = channelSettings.email && emailValid
+    if (deliveryMethod === "sms" && !smsOk) setDeliveryMethod(emailOk ? "email" : "print")
+    else if (deliveryMethod === "email" && !emailOk) setDeliveryMethod("print")
+  }, [channelSettings.sms, channelSettings.email, emailValid, deliveryMethod])
 
   const availableReasons = useMemo(() => reasonsForService(service), [service])
   const otherReasonSelected = reasons.includes("Other")
@@ -386,16 +392,10 @@ export function NoticeForm() {
   )
   const timelineOptions: DisclosureOption[] = useMemo(() => TIMELINES.map((t) => ({ value: t, label: t })), [])
 
-  const deliveryMethods = useMemo(
-    () =>
-      DELIVERY_METHODS.filter((m) => {
-        if (m.id === "print") return channelSettings.print
-        if (m.id === "sms") return channelSettings.sms
-        if (m.id === "sms-email") return channelSettings.sms && channelSettings.email
-        return true
-      }),
-    [channelSettings],
-  )
+  // Always render all three tiles (SMS, Email, Print) so an unavailable channel
+  // shows as a faded, disabled option rather than disappearing. Per-tile
+  // disabled state + hint are computed at render time from channelSettings.
+  const deliveryMethods = DELIVERY_METHODS
 
   // ----- Handlers
   const selectService = useCallback((id: string) => {
@@ -458,9 +458,7 @@ export function NoticeForm() {
     action,
     destination: resolvedDestination(),
     referralEmail:
-      destination === REFERRAL_HQ_DESTINATION
-        ? referralEmail || hqDepartmentById(referralDepartmentId)?.email
-        : undefined,
+      destination === REFERRAL_HQ_DESTINATION ? referralEmail.trim() || undefined : undefined,
     ...cardPreviewFields(),
     timeline: resolvedTimeline(),
     additional: additional || undefined,
@@ -552,7 +550,6 @@ export function NoticeForm() {
     // Resolve referral metadata (stored by stable id, never display name only).
     const isDistrictReferral = destination === REFERRAL_DISTRICT_DESTINATION
     const isHqReferral = destination === REFERRAL_HQ_DESTINATION
-    const hqDept = isHqReferral ? hqDepartmentById(referralDepartmentId) : undefined
 
     // Resolve card-collection referral snapshot (values frozen at issue time so
     // later master-data edits never change historic notices).
@@ -569,7 +566,7 @@ export function NoticeForm() {
     const activeReferralEmail = cardAtDistrict
       ? cardLocation.email.trim() || undefined
       : isHqReferral
-        ? referralEmail || hqDept?.email
+        ? referralEmail.trim() || undefined
         : undefined
     // Start pending so the status can be flipped to sent/failed after delivery.
     const referralEmailStatus: ReferralEmailStatus = activeReferralEmail ? "pending" : "not-required"
@@ -614,8 +611,10 @@ export function NoticeForm() {
       officer: account?.name ?? "",
       office,
       deliveryMethod,
-      smsStatus: deliveryMethod === "print" ? "Pending" : online ? "Sent" : "Queued",
-      emailStatus: deliveryMethod === "sms-email" ? (online ? "Sent" : "Queued") : undefined,
+      // SMS has no gateway and email/print don't send an SMS, so SMS stays Pending
+      // unless a real SMS channel is ever selected.
+      smsStatus: deliveryMethod === "sms" ? (online ? "Sent" : "Queued") : "Pending",
+      emailStatus: deliveryMethod === "email" ? (online ? "Sent" : "Queued") : undefined,
       pdfStatus: online ? "Generated" : "Pending",
       caseStatus: "Awaiting Client Action",
       priority: "Medium",
@@ -833,12 +832,27 @@ export function NoticeForm() {
             <FieldLabel>Preferred Delivery Method</FieldLabel>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {deliveryMethods.map((m) => {
-                const disabled = m.id === "sms-email" && !emailValid
+                let disabled = false
+                let hint: string | undefined
+                if (m.id === "sms") {
+                  // No SMS gateway wired up yet: show it, but keep it unselectable.
+                  disabled = !channelSettings.sms
+                  hint = disabled ? "No SMS gateway connected" : undefined
+                } else if (m.id === "email") {
+                  disabled = !channelSettings.email || !emailValid
+                  hint = !channelSettings.email
+                    ? "Email channel unavailable"
+                    : !emailValid
+                      ? "Add an email first"
+                      : undefined
+                } else if (m.id === "print") {
+                  disabled = !channelSettings.print
+                }
                 return (
                   <SelectableTile
                     key={m.id}
                     label={m.label}
-                    hint={disabled ? "Add an email first" : undefined}
+                    hint={hint}
                     selected={deliveryMethod === m.id}
                     disabled={disabled}
                     onSelect={() => setDeliveryMethod(m.id)}
