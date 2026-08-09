@@ -11,6 +11,11 @@ match these shapes exactly — the frontend consumes them with no field renaming
 - **IDs, notice numbers, and timestamps** are generated **server-side**. Never trust client-supplied values for these.
 - **Deliverables:** running API, OpenAPI/Swagger spec, Postman collection, seed script, and the list of required environment variables.
 
+> **Changelog — 2026-08-09 (case-management-system).** Three contract-affecting changes since the last revision:
+> 1. **District office emails are now free text** entered by the officer per referral — no longer stored in Office master data. The old "reject office without `officialEmail`" integrity rule is **reversed**. Affects §2 (Notice `referralEmail`/`receivingOfficeEmail`, Office), §5 issue flow, §6 validation, §7 seed.
+> 2. **User account credential lifecycle:** new field `User.mustChangePassword`, default password `Welcome123`, forced first-login change, and admin password reset. New endpoints `POST /auth/change-password` and `POST /users/:id/reset-password`. Affects §1, §2, §4, §5a.
+> 3. **Office regions expanded 5 → 6** (`Central | Mid Western | Eastern | Western | North Eastern | North Western`) and the office seed grew to 140 referral-target districts (no `code`, no email) plus a 16-office assignable/issuing set (with `code`). Affects §2, §3, §7.
+
 ---
 
 ## 1. Auth & roles
@@ -21,9 +26,12 @@ Exactly two roles. No intermediate tiers.
 Role = "district-staff" | "systems-admin"
 ```
 
-- `POST /auth/login` — body `{ email, password }` → `{ token, user }`.
+- `POST /auth/login` — body `{ email, password }` → `{ token, user }`. The returned `user` includes `mustChangePassword`; the frontend gates the whole app on it (see below).
 - `POST /auth/logout`
-- `GET /auth/me` → `{ user }` (the authenticated `User`).
+- `GET /auth/me` → `{ user }` (the authenticated `User`, including `mustChangePassword`).
+- `POST /auth/change-password` — **self**, authenticated. Body `{ currentPassword, newPassword }` (during a forced first-login change the frontend still knows the current/default password, so keep `currentPassword` required). On success set `mustChangePassword = false`. Returns the updated `{ user }`.
+
+**Password lifecycle (see §5a):** new accounts are created server-side with the shared default password **`Welcome123`** and `mustChangePassword = true`. A user cannot use the app until they change it. An admin reset (`POST /users/:id/reset-password`) restores the default and re-arms `mustChangePassword = true`.
 
 **Scoping (enforce on every endpoint, server-side):**
 - `district-staff` may only read/write notices where `notice.office === user.district`.
@@ -47,6 +55,7 @@ Role = "district-staff" | "systems-admin"
   initials: string
   active: boolean
   email?: string
+  mustChangePassword: boolean  // true after create/admin-reset; forces a change at next login
   // backend-only, never returned: passwordHash
 }
 ```
@@ -73,7 +82,7 @@ Role = "district-staff" | "systems-admin"
   referralDestinationType?: "DISTRICT_OFFICE" | "HEADQUARTERS" | "OTHER"
   referralOfficeId?: string     // -> Office.id (master data)
   referralDepartmentId?: string // -> HqDepartment.id (master data)
-  referralEmail?: string        // receiving email snapshot
+  referralEmail?: string        // receiving email. DISTRICT_OFFICE: officer-typed free text (client-supplied). HEADQUARTERS: snapshot of department.email.
   referralEmailStatus?: "not-required" | "pending" | "sent" | "failed"
   referralEmailSentAt?: string  // ISO
 
@@ -83,7 +92,7 @@ Role = "district-staff" | "systems-admin"
   cardLocationOfficeId?: string // -> Office.id (district path)
   cardLocationText?: string     // snapshot: district office name OR outreach location text
   cardBatchNumber?: string
-  receivingOfficeEmail?: string // snapshot of office email at issue time (district path)
+  receivingOfficeEmail?: string // district card path: officer-typed free-text office email (client-supplied, validated format-only)
   outreachContactStaffName?: string
   outreachContactStaffId?: string   // -> User.id if selected from roster
   outreachContactStaffPhone?: string
@@ -120,19 +129,24 @@ Role = "district-staff" | "systems-admin"
 
 ```ts
 {
-  id: string          // e.g. "loc-wakiso"
+  id: string          // referral offices: "loc-<slug>" (no code). Issuing/assignable offices carry a code.
   name: string
-  code: string        // office code used in notice numbers, e.g. "WAK"
-  region: string      // "Kampala" | "Central" | "Eastern" | "Northern" | "Western"
+  code?: string       // office code used in notice numbers, e.g. "WAK". Present only on the assignable/issuing set; the 140 referral-target offices have NO code.
+  region: string      // 6-region vocab §3: "Central" | "Mid Western" | "Eastern" | "Western" | "North Eastern" | "North Western"
   type: "DISTRICT_OFFICE" | "HEADQUARTERS"
-  officialEmail?: string   // may be null -> triggers "No official email configured for this office"
+  officialEmail?: string   // DEPRECATED for districts — no longer stored/seeded on district offices (see rule below). Retained only for HQ if desired.
   active: boolean
 }
 ```
 
-> Integrity rule: if a selected office has **no** `officialEmail`, the API must reject
-> it for referral use and surface "No official email configured for this office."
-> Officers must never be able to persist an arbitrary/free-typed office address.
+> **Integrity rule (UPDATED — reverses the previous rule):** District office emails are
+> **NOT** stored in master data. At referral time the officer **types the receiving
+> office email as free text** (a faint `example@nira.go.ug` placeholder guides them),
+> and the API persists that client-supplied value verbatim as `referralEmail` /
+> `receivingOfficeEmail`. The API must **not** reject a district office for lacking an
+> `officialEmail`, and must **not** derive the address from master data. Validate the
+> officer-supplied email for **format only** (§6). HQ department referrals still use the
+> department's stored `email`.
 
 ### HqDepartment  (master data — frontend type: `HeadquartersDepartment`)
 
@@ -191,6 +205,11 @@ CaseStatus =
 ReferralLocationType = "DISTRICT_OFFICE" | "HEADQUARTERS" | "OTHER"
 CardLocationType     = "DISTRICT_OFFICE" | "LOCAL_OUTREACH"
 ReferralEmailStatus  = "not-required" | "pending" | "sent" | "failed"
+
+// Office regions — 6-value NIRA operating-region vocabulary (was 5; "Kampala" folded
+// into "Central", "Northern" split into "North Eastern" / "North Western",
+// "Western" split into "Western" / "Mid Western").
+Region = "Central" | "Mid Western" | "Eastern" | "Western" | "North Eastern" | "North Western"
 
 // QR referral tracking lifecycle (distinct from CaseStatus — see §10).
 // A referral NEVER expires on a timer; it stays valid until CLOSED or CANCELLED.
@@ -274,32 +293,44 @@ These endpoints back that page (see §10 for the full model).
 
 ### Users (admin)
 
-- `GET /users` (scoped: admin sees all), `POST /users`, `PATCH /users/:id`, `PATCH /users/:id/active` (toggle `active`).
+- `GET /users` (scoped: admin sees all).
+- `POST /users` — create account. Server sets the default password `Welcome123` and `mustChangePassword = true` (the client never sends a password on create). Returns the created `User`.
+- `PATCH /users/:id`, `PATCH /users/:id/active` (toggle `active`).
+- `POST /users/:id/reset-password` — **admin only**. Resets the target's password to the default `Welcome123` and sets `mustChangePassword = true`; writes an audit event. Returns the updated `User`. Does **not** return the password.
 
 ### Settings (admin)
 
 - `GET /channel-settings`, `PATCH /channel-settings` — body is a partial of `{ sms, email, print }`.
 
-> These map 1:1 to the current frontend store methods: `issueNotice`, `resolveCase`,
+> These map 1:1 to the current frontend store/session methods: `issueNotice`, `resolveCase`,
 > `updateCaseStatus`, `retryDelivery`, `sendReferralEmail`, `syncOutbox`, `addAccount`,
-> `updateAccount`, `toggleAccountActive`, `updateChannelSettings`, and the QR methods
+> `updateAccount`, `toggleAccountActive`, `updateChannelSettings`, the auth methods
+> `authenticate`/`signIn`, `changePassword` (forced + voluntary) and admin reset (`updateAccount`
+> with `password`+`mustChangePassword`), and the QR methods
 > `findByToken`, `recordView`, `acknowledgeReferral`, `updateTrackingStatus` (→ §10).
 
 ---
 
 ## 5. Business rules
 
+### 5a. Account credentials & first-login change
+- **Create:** `POST /users` seeds the shared default password **`Welcome123`** and `mustChangePassword = true`. The client never supplies a password on create.
+- **First login:** `POST /auth/login` succeeds with the default password and returns `mustChangePassword = true`. The frontend then blocks all app routes and shows a forced change screen until `POST /auth/change-password` succeeds and flips the flag to `false`.
+- **Admin reset:** `POST /users/:id/reset-password` restores `Welcome123` and re-arms `mustChangePassword = true`, so the user is forced to change again at next login.
+- Passwords are hashed server-side (never returned in any response). The frontend prototype stores them in plaintext in `localStorage`; the API must **not** mirror that.
+
 ### Notice numbers
 - Server-generated, sequential **per office per year**, never reused.
 - Format follows the current frontend convention: `CR-<OFFICE_CODE>-<YYYYMMDD>-<SEQ>` (e.g. `CR-WAK-20260808-00417`). Office codes: `MAK, KLA, WAK, MUK, HQ, ...` from Office master data. (The `CR` prefix = "Central Region", the pilot/study system name. Any pre-existing records carrying the legacy `NIRA-` prefix keep their original numbers — numbers are immutable once issued; only newly generated numbers use `CR-`.)
 
 ### Issue flow (`POST /notices`) — order matters
-1. Validate payload (§6). Reject referral to an office with no `officialEmail`.
+1. Validate payload (§6). For district referrals, validate the officer-supplied email **format only** — do **not** reject based on master data (district offices have no stored email).
 2. **Save the notice first** and generate `noticeNumber`, a secure random `retrievalToken`, and set `trackingStatus = "ISSUED"`.
-3. Snapshot referral master data onto the record:
-   - District card path → `cardLocationText = "NIRA <name> District Office"`, `receivingOfficeEmail = office.officialEmail`, `cardBatchNumber`.
+3. Persist referral fields onto the record:
+   - District card path → `cardLocationText = "NIRA <name> District Office"`, `receivingOfficeEmail = <officer-typed free-text email>` (client-supplied), `cardBatchNumber`.
+   - District office referral (destination = "Another NIRA District Office") → `referralEmail = <officer-typed free-text email>` (client-supplied).
    - Outreach card path → `cardLocationText = <free-text location>`, `outreachContactStaffName` (+ optional phone), `cardBatchNumber`.
-   - HQ department referral → `referralEmail = department.email`.
+   - HQ department referral → `referralEmail = department.email` (still snapshotted from master data).
 4. Generate the PDF (`pdfStatus`).
 5. Set initial delivery statuses per `deliveryMethod` and enabled channels.
 6. If there is a receiving referral email, send it and record `referralEmailStatus` (`pending` → `sent`/`failed`) and `referralEmailSentAt`.
@@ -339,15 +370,18 @@ for the client. The PDF is **immutable** once issued. See §10.
 - Uganda phone: matches `^(\+?256|0)7\d{8}$`.
 - Email: standard address format.
 - Required per service/reason pathway:
-  - District card path → `cardLocationOfficeId` + `cardBatchNumber` + office has `officialEmail`.
+  - District card path → `cardLocationOfficeId` + `cardBatchNumber` + `receivingOfficeEmail` (officer-typed, valid email **format**; no master-data email lookup).
+  - District office referral → `referralOfficeId` + `referralEmail` (officer-typed, valid email format).
   - Outreach card path → `cardLocationText` + `cardBatchNumber` + `outreachContactStaffName`.
 - The two card-collection reasons are **mutually exclusive**; reject a payload containing both.
 
 ---
 
 ## 7. Seed data
-- **Users:** one `district-staff` in "Makindye District Office" (Paul Kasawuli, `p.kasawuli@nira.go.ug`) and one `systems-admin` with national scope (Miriam Achieng, `m.achieng@nira.go.ug`); plus the roster in `SEED_ACCOUNTS` (Grace Nabbosa, John Okello, Amina Namusoke, Peter Ochieng — the last `active: false`).
-- **Offices:** the district/division offices with `code`, `region`, and `officialEmail` — **leave one or two offices with no `officialEmail`** (e.g. Kitgum, Moroto) to exercise the "not configured" path. Include issuing offices with codes `MAK, KLA, WAK, MUK` and `HQ`.
+- **Users:** one `district-staff` in "Makindye District Office" (Paul Kasawuli, `p.kasawuli@nira.go.ug`) and one `systems-admin` with national scope (Miriam Achieng, `m.achieng@nira.go.ug`); plus the roster in `SEED_ACCOUNTS` (Grace Nabbosa, John Okello, Amina Namusoke, Peter Ochieng — the last `active: false`). Seed every account with password `Welcome123`; seed accounts may set `mustChangePassword = false` (pre-onboarded) while **newly created** accounts always get `true`.
+- **Offices:**
+  - **Assignable / issuing set** (has `code`, used for notice numbers + staff assignment): `MAK` (Makindye), `KLA` (Kampala Central), `WAK` (Wakiso), `MUK` (Mukono), plus `NSG, NSK, LUW, KAW, NAK, RUB, KAY, BUV, BUI, GOM, MPI, BUT` — all `region: "Central"` — and `HQ` (Headquarters).
+  - **Referral-target set** (the full 140-district roster in `UGANDA_DISTRICT_SEED`): `type: "DISTRICT_OFFICE"`, id `loc-<slug>`, **no `code`, no `officialEmail`** (district emails are typed per referral, never stored). Regions use the 6-value `Region` vocab (§3).
 - **HQ departments:** Legal Department (`legal@nira.go.ug`), Client Relations Office (`clientrelations@nira.go.ug`), BDAR Office (`bdar@nira.go.ug`).
 - **Services & reasons:** the full catalog in §3.
 - **Notices:** a handful across different `caseStatus` and `service` values, including at least one card-collection district referral and one outreach referral.
