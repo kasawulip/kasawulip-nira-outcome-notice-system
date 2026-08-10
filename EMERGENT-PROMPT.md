@@ -4,11 +4,13 @@ Copy everything in the fenced block below and paste it into Emergent as your bui
 instruction. Attach `API-CONTRACT.md` alongside it as the authoritative field-level
 reference.
 
-> **Updated 2026-08-09.** Reflects three changes vs. the prior version: (1) district
+> **Updated 2026-08-09.** Reflects four changes vs. the prior version: (1) district
 > office emails are officer-typed free text, not master-data lookups; (2) account
 > credential lifecycle — default password `Welcome123`, `mustChangePassword`, forced
-> first-login change, admin reset; (3) 6-region office vocabulary + 140-district seed.
-> See the API-CONTRACT.md changelog for the field-level detail.
+> first-login change, admin reset; (3) 6-region office vocabulary + 140-district seed;
+> (4) issuance hardening — PDF/email are best-effort side effects after the notice is
+> committed, so `POST /notices` never returns 500 for a delivery failure (permanent fix
+> for the HQ/BDAR 500). See the API-CONTRACT.md changelog for the field-level detail.
 
 ---
 
@@ -63,23 +65,29 @@ ENDPOINTS (minimum)
   clears mustChangePassword on success
 - GET /notices (filter by office, caseStatus, service, date range, search;
   paginated; auto-scoped by role), GET /notices/:id
-- POST /notices — issue a notice. Server validates, generates noticeNumber
-  (<OFFICE-CODE>/<YYYY>/<sequential>), persists referral fields into the record
-  (office/department name + officer-typed receiving email + batch, or outreach
-  location + staff — the receiving email is officer-typed free text for BOTH
-  district-office and HQ-section referrals) so later master-data edits
-  never alter historic notices, sets initial delivery statuses,
-  starts PDF generation, and for EVERY referral (HQ section or another NIRA
-  district office) automatically emails the exact-copy notice PDF to the
-  officer-typed referralEmail immediately after generation, recording
-  referralEmailStatus/referralEmailSentAt. This auto-send is mandatory and not
-  user-triggered. The notice MUST be saved before the email is attempted; a failed
-  email must never lose the notice (mark pending/failed, keep the record).
+- POST /notices — issue a notice. GOLDEN RULE: this endpoint MUST NOT return 5xx
+  because of PDF, email, or SMS. Order: (1) validate payload only — bad input returns
+  400 with { error, field, message }, never 500; (2) persist the notice atomically in a
+  DB transaction (generate noticeNumber <OFFICE-CODE>/<YYYY>/<sequential>, retrievalToken,
+  trackingStatus=ISSUED, and write referral fields — office/department name +
+  officer-typed receiving email for BOTH district-office and HQ-section referrals, batch,
+  or outreach location + staff). Only a failed commit may return 500; once committed the
+  response is 201 no matter what follows. (3) Generate the PDF in its own try/catch
+  (on failure pdfStatus="failed", continue). (4) Set delivery statuses. (5) For EVERY
+  referral (HQ section or another district office) auto-email the exact-copy PDF to the
+  officer-typed referralEmail in its own try/catch — email env vars missing => status
+  "pending", send error => status "failed", always continue. Record
+  referralEmailStatus/referralEmailSentAt. The 201 body returns pdfStatus +
+  referralEmailStatus so the UI can show "issued, email pending/failed". A failed PDF or
+  email must NEVER un-issue or lose the notice. (This permanently fixes the 500 seen on
+  HQ/BDAR referrals: it was a post-persist side effect throwing — isolate it, don't fail
+  the request.)
 - PATCH /notices/:id/case-status — transition case status (validate allowed
   transitions).
 - POST /notices/:id/retry-delivery — re-attempt SMS/email delivery.
-- POST /notices/:id/resend-referral-email — authorized resend; re-attempt and
-  update status + timestamp + audit.
+- POST /notices/:id/resend-referral-email — authorized resend; re-run PDF + send with
+  the same failure isolation; return 200 with the updated referralEmailStatus even when
+  the send fails (never 5xx for a provider error), 4xx only for auth / missing notice.
 - GET /notices/:id/pdf — return the generated outcome-notice PDF.
 - POST /sync/outbox — accept a batch of notices created offline; persist
   idempotently by client-supplied id; return accepted/queued results.
@@ -111,6 +119,22 @@ BUSINESS RULES
   the system MUST automatically email the exact-copy outcome-notice PDF (byte-for-
   byte identical to the client's issued notice, same as GET /notices/:id/pdf) to the
   officer-typed referralEmail. Not optional, not user-triggered.
+- Failure isolation (permanent 500 prevention): every side effect — PDF render,
+  email/SMS send, attachment, QR, audit write, any network/third-party call — runs in
+  its own try/catch and degrades to a stored status or logged warning; none may surface
+  as a 5xx on the primary request. A 500 must only ever mean an unexpected bug or a
+  failed DB write, never an expected/handled condition. Expected problems map to
+  400/401/403/404/409. Add a global error handler that returns JSON { error } and logs
+  the stack, but no handled path should reach it.
+- The email/SMS provider is OPTIONAL infrastructure: the API must boot and issue
+  notices with those env vars absent or invalid; validate provider config lazily at
+  send time (inside the try/catch), never at import/boot.
+- Migrate the DB schema before deploy so every field this spec adds (referralEmail,
+  receivingOfficeEmail, mustChangePassword, deliveryMethod enum sms|email|print with old
+  "sms-email" migrated to "email", channel settings) exists with correct nullability — a
+  missing column / enum value / NOT-NULL surprise is the classic hidden 500. Never
+  dereference optional master data (HQ department / office lookups may be null now that
+  the address is officer-typed); guard every such access.
 - Account credentials: new users start with default password "Welcome123" and
   mustChangePassword=true; the app is blocked until they change it at first login.
   Admin reset restores "Welcome123" and re-arms the flag. Hash passwords; never

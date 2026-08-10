@@ -15,6 +15,7 @@ match these shapes exactly — the frontend consumes them with no field renaming
 > 1. **District office emails are now free text** entered by the officer per referral — no longer stored in Office master data. The old "reject office without `officialEmail`" integrity rule is **reversed**. Affects §2 (Notice `referralEmail`/`receivingOfficeEmail`, Office), §5 issue flow, §6 validation, §7 seed.
 > 2. **User account credential lifecycle:** new field `User.mustChangePassword`, default password `Welcome123`, forced first-login change, and admin password reset. New endpoints `POST /auth/change-password` and `POST /users/:id/reset-password`. Affects §1, §2, §4, §5a.
 > 3. **Office regions expanded 5 → 6** (`Central | Mid Western | Eastern | Western | North Eastern | North Western`) and the office seed grew to 140 referral-target districts (no `code`, no email) plus a 16-office assignable/issuing set (with `code`). Affects §2, §3, §7.
+> 4. **Issuance hardening (permanent fix for the `POST /notices` 500 on HQ/BDAR referrals).** PDF and referral-email are best-effort side effects wrapped in try/catch **after** the notice is committed; a notice is issued as `201` even if email is unconfigured or fails (status degrades to `pending`/`failed`). A `500` is now only legitimate if the DB write of the notice itself fails. Added an exhaustive error contract table and a global failure-isolation rule. Email/SMS env vars are explicitly optional. Affects §5 issue flow, Delivery, §8.
 
 ---
 
@@ -324,17 +325,45 @@ These endpoints back that page (see §10 for the full model).
 - Format follows the current frontend convention: `CR-<OFFICE_CODE>-<YYYYMMDD>-<SEQ>` (e.g. `CR-WAK-20260808-00417`). Office codes: `MAK, KLA, WAK, MUK, HQ, ...` from Office master data. (The `CR` prefix = "Central Region", the pilot/study system name. Any pre-existing records carrying the legacy `NIRA-` prefix keep their original numbers — numbers are immutable once issued; only newly generated numbers use `CR-`.)
 
 ### Issue flow (`POST /notices`) — order matters
-1. Validate payload (§6). For district referrals, validate the officer-supplied email **format only** — do **not** reject based on master data (district offices have no stored email).
-2. **Save the notice first** and generate `noticeNumber`, a secure random `retrievalToken`, and set `trackingStatus = "ISSUED"`.
-3. Persist referral fields onto the record:
+
+> **Golden rule: issuance MUST NOT return 5xx because of PDF, email, SMS, or any other
+> post-persist side effect.** The only failures allowed to stop issuance are (a) request
+> validation (→ `400`) and (b) the atomic DB write of the notice itself (→ `500`, and only
+> that). Everything after the notice row is committed — PDF rendering, email send,
+> attachment, SMS — is a **best-effort side effect** that MUST be wrapped in its own
+> try/catch and degrade to a stored status. A referral to HQ (e.g. BDAR) or to another
+> district office is the common trigger for this; it must succeed even if email is
+> completely unconfigured.
+
+1. **Validate payload (§6) only.** Field-level problems (missing/invalid `referralEmail`, bad phone, unknown office, disabled `deliveryMethod` channel) return **`400`** with a machine-readable `{ error, field, message }` — never a `500`, never a silent pass. Validate the officer-supplied referral email for **format only**; do **not** consult master data.
+2. **Persist the notice atomically FIRST**, inside a DB transaction: generate `noticeNumber`, a secure random `retrievalToken`, set `trackingStatus = "ISSUED"`, and write all referral fields (step 3). Commit. If and only if this commit fails do you return `500`. Once committed, the request is already a success — the response is `201` regardless of what happens in steps 4–6.
+3. Referral fields written in step 2:
    - District card path → `cardLocationText = "NIRA <name> District Office"`, `receivingOfficeEmail = <officer-typed free-text email>` (client-supplied), `cardBatchNumber`.
    - District office referral (destination = "Another NIRA District Office") → `referralEmail = <officer-typed free-text email>` (client-supplied).
    - Outreach card path → `cardLocationText = <free-text location>`, `outreachContactStaffName` (+ optional phone), `cardBatchNumber`.
    - HQ department referral (destination = "NIRA Headquarters") → `referralEmail = <officer-typed free-text email>` (client-supplied). The department selection identifies the receiving section; the address itself is **typed per referral, never derived from master data**.
-4. Generate the PDF (`pdfStatus`). This PDF is the exact, immutable outcome-notice document issued to the client (identical to `GET /notices/:id/pdf`).
-5. Set initial delivery statuses per `deliveryMethod` and enabled channels.
-6. **Mandatory referral auto-send:** for **every** referral (HQ section OR another NIRA district office), immediately after the notice is generated, automatically email the exact-copy PDF (step 4) to the officer-typed `referralEmail`. Record `referralEmailStatus` (`pending` → `sent`/`failed`) and `referralEmailSentAt`. This is not optional and not user-triggered — it fires on successful generation.
-7. **A failed email must never lose the notice** — keep the record and mark `pending`/`failed` with an authorized resend available (`POST /notices/:id/resend-referral-email`).
+4. **Generate the PDF — in its own try/catch.** This PDF is the exact, immutable outcome-notice document issued to the client (identical to `GET /notices/:id/pdf`). On any failure set `pdfStatus = "failed"`, log it, and continue — the notice stays issued and the PDF can be regenerated on demand by `GET /notices/:id/pdf`. Never let a PDF error bubble up.
+5. Set initial delivery statuses per `deliveryMethod` and enabled channels (pure in-memory computation; cannot fail the request).
+6. **Mandatory referral auto-send — in its own try/catch, after commit.** For **every** referral (HQ section OR another NIRA district office), immediately after step 4, automatically email the exact-copy PDF to the officer-typed `referralEmail`. Record `referralEmailStatus` (`pending` → `sent`/`failed`) and `referralEmailSentAt`. Failure modes and their required (non-throwing) outcomes:
+   - Email provider env vars missing/unconfigured (e.g. no `RESEND_API_KEY`/`MAIL_FROM`) → set `referralEmailStatus = "pending"`, log a warning, continue. **Do not throw.**
+   - PDF unavailable (step 4 failed) → `referralEmailStatus = "pending"`, continue.
+   - Provider/SMTP/network/attachment error → `referralEmailStatus = "failed"`, log the provider error, continue.
+7. **A failed PDF/email must never lose or un-issue the notice** — the record is kept, statuses reflect reality, and an authorized resend is available (`POST /notices/:id/resend-referral-email`, which re-runs step 4+6 safely). The `201` response returns the full notice including `pdfStatus` and `referralEmailStatus` so the client can surface "issued, email pending/failed" instead of an error.
+
+### Error contract for `POST /notices` (exhaustive)
+| Situation | HTTP | Body | Notice persisted? |
+|---|---|---|---|
+| Invalid/missing field (incl. referralEmail, disabled channel) | `400` | `{ error:"validation", field, message }` | No |
+| Not authenticated / wrong role / office scope | `401`/`403` | `{ error }` | No |
+| DB write of the notice fails | `500` | `{ error:"persist_failed" }` | No |
+| Notice committed; PDF failed | `201` | notice w/ `pdfStatus:"failed"` | **Yes** |
+| Notice committed; email unconfigured | `201` | notice w/ `referralEmailStatus:"pending"` | **Yes** |
+| Notice committed; email send failed | `201` | notice w/ `referralEmailStatus:"failed"` | **Yes** |
+| Notice committed; everything sent | `201` | notice w/ `sent` statuses | **Yes** |
+
+> A `500` from `POST /notices` therefore has exactly one legitimate cause: the notice row
+> could not be written. Any other `500` (email, PDF, SMS, null department lookup, missing
+> migration column) is a bug — fix by isolating that step, not by failing the request.
 
 ### Referral email content (must include)
 Notice Number · Client Full Name · NIN/Application Number · Client Phone · Referring Office · Referring Officer · Card Batch Number (if applicable) · Receiving Office/Department · Service Requested · Reason · referral date & time · **the generated outcome-notice PDF attached, byte-for-byte identical to the client's issued notice**.
@@ -361,8 +390,16 @@ for the client. The PDF is **immutable** once issued. See §10.
 - Log any access to the full NIN in the audit trail.
 
 ### Delivery
-- Use a real transactional email provider (SMTP/SendGrid, env-configurable) for referral emails.
-- If no SMS gateway is configured, simulate SMS status transitions (`Pending → Queued → Sent → Delivered`, with occasional `Failed`).
+- Use a real transactional email provider (SMTP/SendGrid/Resend, env-configurable) for referral emails.
+- **The email provider is optional infrastructure, not a hard dependency.** The API must boot and issue notices with the email env vars absent or invalid. When they are missing, treat the referral send as `pending` (queued for later), never as a startup crash or a request failure. Validate provider config lazily at send time inside the try/catch, not at import/boot time.
+- **`POST /notices/:id/resend-referral-email`** re-runs PDF generation + send with the same failure isolation as the issue flow: it returns `200` with the updated `referralEmailStatus` even when the send fails (so the UI shows "still failed"), and only returns `4xx`/`5xx` for auth or a missing notice — never for a provider error.
+- If no SMS gateway is configured, simulate SMS status transitions (`Pending → Queued → Sent → Delivered`, with occasional `Failed`). SMS is never a hard dependency either.
+
+### Robustness / failure isolation (applies to ALL endpoints)
+- **Every side effect is wrapped.** PDF rendering, email/SMS sending, QR generation, audit-log writes, and any third-party/network call run inside try/catch and degrade to a stored status or a logged warning. They never propagate as a `5xx` on the primary request.
+- **A `500` always means an unexpected server bug**, never an expected/handled condition. Expected problems map to `400` (validation), `401/403` (auth), `404` (missing), `409` (conflict, e.g. duplicate offline id). Add a global error handler so any uncaught exception returns a JSON `{ error }` with a logged stack trace — but the goal is that no handled path ever reaches it.
+- **Schema is authoritative and migrated before deploy.** Every field this contract adds (`referralEmail`, `receivingOfficeEmail`, `mustChangePassword`, `deliveryMethod` enum without `sms-email`, channel-settings) must exist in the DB with the correct nullability. A missing column / enum-value / NOT-NULL surprise is the classic hidden `500`; run and verify migrations, and default nullable columns rather than hard-failing inserts.
+- **Never dereference optional master data.** HQ department / office lookups may return null (address is officer-typed now); guard every such access. A null lookup must never throw.
 
 ---
 
@@ -390,12 +427,16 @@ for the client. The PDF is **immutable** once issued. See §10.
 ---
 
 ## 8. Environment variables (return these to me)
+Required for the API to run:
 - `DATABASE_URL`
 - `JWT_SECRET`
+- `APP_ORIGIN` — public origin used to build QR verification URLs (`<APP_ORIGIN>/notice/:token`)
+
+Optional — the API MUST boot and issue notices without these; their absence degrades the
+referral send to `pending` (see Delivery / Robustness), it never blocks issuance:
 - `EMAIL_PROVIDER_API_KEY` / SMTP settings
 - `EMAIL_FROM_ADDRESS`
-- `APP_ORIGIN` — public origin used to build QR verification URLs (`<APP_ORIGIN>/notice/:token`)
-- (optional) `SMS_GATEWAY_*`
+- `SMS_GATEWAY_*`
 
 ---
 
