@@ -4,13 +4,15 @@ Copy everything in the fenced block below and paste it into Emergent as your bui
 instruction. Attach `API-CONTRACT.md` alongside it as the authoritative field-level
 reference.
 
-> **Updated 2026-08-09.** Reflects four changes vs. the prior version: (1) district
+> **Updated 2026-08-09.** Reflects five changes vs. the prior version: (1) district
 > office emails are officer-typed free text, not master-data lookups; (2) account
 > credential lifecycle — default password `Welcome123`, `mustChangePassword`, forced
 > first-login change, admin reset; (3) 6-region office vocabulary + 140-district seed;
 > (4) issuance hardening — PDF/email are best-effort side effects after the notice is
 > committed, so `POST /notices` never returns 500 for a delivery failure (permanent fix
-> for the HQ/BDAR 500). See the API-CONTRACT.md changelog for the field-level detail.
+> for the HQ/BDAR 500); (5) NIRA Headquarters is an assignable/issuing office — HQ staff
+> carry a department (6 directorates), HQ-issued notices carry a printed referringDepartment,
+> and HQ→HQ referrals are blocked. See the API-CONTRACT.md changelog for the field-level detail.
 
 ---
 
@@ -39,20 +41,26 @@ TECH EXPECTATIONS
 
 ENTITIES (see API-CONTRACT.md for exact fields)
 - User: id, name, title, role, office/district, initials, active, email,
-  mustChangePassword (forces a password change at next login), passwordHash.
+  mustChangePassword (forces a password change at next login), passwordHash,
+  department? (REQUIRED when district == "NIRA Headquarters"; one of the 6 HQ
+  directorates below).
 - Notice: core record with client details, service, reasons[], action, destination,
-  timeline, delivery/case statuses, priority, plus referral fields
-  (referralDestinationType, referralOfficeId, referralDepartmentId, referralEmail,
-  referralEmailStatus, referralEmailSentAt) and card-collection referral fields
-  (cardLocationType, cardLocationOfficeId, cardLocationText, cardBatchNumber,
-  receivingOfficeEmail, outreachContactStaffName, outreachContactStaffId,
-  outreachContactStaffPhone).
+  timeline, delivery/case statuses, priority, referringDepartment? (referring officer's
+  HQ directorate — set only when the issuing office is NIRA Headquarters; printed on the
+  notice), plus referral fields (referralDestinationType, referralOfficeId,
+  referralDepartmentId, referralEmail, referralEmailStatus, referralEmailSentAt) and
+  card-collection referral fields (cardLocationType, cardLocationOfficeId,
+  cardLocationText, cardBatchNumber, receivingOfficeEmail, outreachContactStaffName,
+  outreachContactStaffId, outreachContactStaffPhone).
 - Office/District (admin-editable): id, name, code? (only on the assignable/issuing
   set; the 140 referral-target districts have no code), region (6-value vocab:
   Central | Mid Western | Eastern | Western | North Eastern | North Western), type.
   District offices do NOT store an email — officers type the receiving office email
-  as free text per referral.
-- HqDepartment: id, name, email, active.
+  as free text per referral. NIRA Headquarters (name "NIRA Headquarters", code "HQ",
+  type HEADQUARTERS) is a first-class assignable/issuing office in this set.
+- HqDepartment: id, name, email, active. The 6 canonical HQ directorates are BDAR,
+  Client Relations, General, Identification Services, Legal, Marriages — this single
+  list drives both a HQ officer's attached department and the HQ referral destination.
 - Service: fixed NIRA service list with allowed reasons per service.
 - AuditEvent: append-only log of issue, delivery attempts, referral emails,
   case-status changes, resends.
@@ -71,7 +79,8 @@ ENDPOINTS (minimum)
   DB transaction (generate noticeNumber <OFFICE-CODE>/<YYYY>/<sequential>, retrievalToken,
   trackingStatus=ISSUED, and write referral fields — office/department name +
   officer-typed receiving email for BOTH district-office and HQ-section referrals, batch,
-  or outreach location + staff). Only a failed commit may return 500; once committed the
+  or outreach location + staff; plus referringDepartment when the issuing office is NIRA
+  Headquarters, rejecting HQ-issued notices that omit it or that target HQ as destination). Only a failed commit may return 500; once committed the
   response is 201 no matter what follows. (3) Generate the PDF in its own try/catch
   (on failure pdfStatus="failed", continue). (4) Set delivery statuses. (5) For EVERY
   referral (HQ section or another district office) auto-email the exact-copy PDF to the
@@ -102,8 +111,9 @@ ENDPOINTS (minimum)
 BUSINESS RULES
 - Notice numbers are server-generated, sequential per office per year, never reused.
 - Referral emails must include: Notice Number, Client Full Name, NIN/Application
-  Number, Client Phone, Referring Office, Referring Officer, Card Batch Number (if
-  applicable), Receiving Office/Department, Service Requested, Reason, referral
+  Number, Client Phone, Referring Office (with referringDepartment when issued from
+  NIRA Headquarters, e.g. "NIRA Headquarters · BDAR"), Referring Officer, Card Batch
+  Number (if applicable), Receiving Office/Department, Service Requested, Reason, referral
   date/time, and the generated PDF attached. Card-collection subject:
   "NIRA Card Collection Referral – [NOTICE NUMBER] – [CLIENT NAME] – Batch [BATCH NUMBER]".
 - Card-collection PDF must state the exact card location, batch number, receiving
@@ -115,6 +125,14 @@ BUSINESS RULES
   look it up from master data (the HQ department selection only identifies the
   section, not the address) and do NOT reject an office for lacking a stored email;
   validate the officer-supplied address for format only.
+- NIRA Headquarters office rules: (a) HQ is assignable/issuing like a district;
+  (b) a district-staff user assigned to HQ MUST have a department (one of the 6
+  directorates) — reject creation without it; (c) NO HQ->HQ referral: when the issuing
+  office is NIRA Headquarters, reject a notice whose referral destination is NIRA
+  Headquarters (HQ may still refer to any district and to non-NIRA destinations; districts
+  are unchanged and may still refer to HQ); (d) when the issuing office is HQ, capture a
+  required referringDepartment (one of the 6), snapshot it literally, and print it on the
+  notice as the referring section (e.g. "NIRA Headquarters · BDAR").
 - Mandatory referral auto-send: immediately after a referral notice is generated,
   the system MUST automatically email the exact-copy outcome-notice PDF (byte-for-
   byte identical to the client's issued notice, same as GET /notices/:id/pdf) to the
@@ -149,12 +167,14 @@ BUSINESS RULES
 
 SEED DATA
 Seed two demo users (one district-staff in "Makindye District Office", one
-systems-admin) plus the roster, all with password "Welcome123" (seed accounts may
+systems-admin, one district-staff attached to "NIRA Headquarters" with department
+"BDAR") plus the roster, all with password "Welcome123" (seed accounts may
 have mustChangePassword=false; newly created accounts always true). Seed the
 assignable/issuing offices WITH codes (MAK, KLA, WAK, MUK, NSG, NSK, LUW, KAW, NAK,
-RUB, KAY, BUV, BUI, GOM, MPI, BUT — all Central — plus HQ) and the full 140-district
-referral-target roster WITHOUT codes or emails (6-region vocab). Seed the HQ
-departments (Legal, Client Relations, BDAR) with emails, and the service/reason
+RUB, KAY, BUV, BUI, GOM, MPI, BUT — all Central — plus HQ = "NIRA Headquarters",
+type HEADQUARTERS) and the full 140-district referral-target roster WITHOUT codes or
+emails (6-region vocab). Seed all 6 HQ departments (BDAR, Client Relations, General,
+Identification Services, Legal, Marriages) with emails, and the service/reason
 catalog. Seed a handful of example notices across different case statuses.
 
 DELIVERABLE

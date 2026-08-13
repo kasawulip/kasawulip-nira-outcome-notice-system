@@ -16,6 +16,7 @@ match these shapes exactly — the frontend consumes them with no field renaming
 > 2. **User account credential lifecycle:** new field `User.mustChangePassword`, default password `Welcome123`, forced first-login change, and admin password reset. New endpoints `POST /auth/change-password` and `POST /users/:id/reset-password`. Affects §1, §2, §4, §5a.
 > 3. **Office regions expanded 5 → 6** (`Central | Mid Western | Eastern | Western | North Eastern | North Western`) and the office seed grew to 140 referral-target districts (no `code`, no email) plus a 16-office assignable/issuing set (with `code`). Affects §2, §3, §7.
 > 4. **Issuance hardening (permanent fix for the `POST /notices` 500 on HQ/BDAR referrals).** PDF and referral-email are best-effort side effects wrapped in try/catch **after** the notice is committed; a notice is issued as `201` even if email is unconfigured or fails (status degrades to `pending`/`failed`). A `500` is now only legitimate if the DB write of the notice itself fails. Added an exhaustive error contract table and a global failure-isolation rule. Email/SMS env vars are explicitly optional. Affects §5 issue flow, Delivery, §8.
+> 5. **NIRA Headquarters as an assignable/referring office.** HQ (`code "HQ"`) joins the assignable set; HQ `district-staff` must carry a `department` (one of 6 `HQ_DIRECTORATES`: BDAR, Client Relations, General, Identification Services, Legal, Marriages). Notices issued from HQ carry a required `referringDepartment` snapshot, printed on the notice and included in the referral email. New rule: **no HQ→HQ referral** (districts unchanged). The 6 directorates now drive both staff assignment and the HQ referral picker. Affects §2 (User, Notice), §3 (Office, HqDepartment), §5, §6.
 
 ---
 
@@ -52,7 +53,8 @@ Role = "district-staff" | "systems-admin"
   name: string
   title: string
   role: "district-staff" | "systems-admin"
-  district: string        // office name, or "All Districts" for admin (national scope)
+  district: string        // office name, or "All Districts" for admin (national scope). May be a field district OR "NIRA Headquarters".
+  department?: string      // REQUIRED when district == "NIRA Headquarters": the officer's directorate (one of §3 HQ_DIRECTORATES). Omitted for district officers and admins.
   initials: string
   active: boolean
   email?: string
@@ -100,8 +102,9 @@ Role = "district-staff" | "systems-admin"
 
   // --- Delivery & lifecycle ---
   officer: string               // issuing officer display name
-  office: string                // issuing office (scope key)
-  deliveryMethod: "sms" | "sms-email" | "print"
+  office: string                // issuing office (scope key); may be a district OR "NIRA Headquarters"
+  referringDepartment?: string  // referring officer's HQ directorate (one of §3 HQ_DIRECTORATES). Set ONLY when office == "NIRA Headquarters"; printed on the notice. Snapshot literal.
+  deliveryMethod: "sms" | "email" | "print"
   smsStatus: DeliveryStatus     // enum §3
   emailStatus?: DeliveryStatus
   pdfStatus: "Generated" | "Pending" | "Failed"
@@ -140,13 +143,20 @@ Role = "district-staff" | "systems-admin"
 }
 ```
 
+> **NIRA Headquarters is a first-class assignable/issuing office** (name exactly
+> `"NIRA Headquarters"`, code `"HQ"`, type `"HEADQUARTERS"`), part of the assignable set
+> alongside the field districts. Staff can be assigned to it and it can issue and refer
+> notices. It differs from a district in one way only: it can **never** be a referral
+> *destination from itself* — see the no-HQ→HQ rule in §6.
+
 > **Integrity rule (UPDATED — reverses the previous rule):** District office emails are
 > **NOT** stored in master data. At referral time the officer **types the receiving
 > office email as free text** (a faint `example@nira.go.ug` placeholder guides them),
 > and the API persists that client-supplied value verbatim as `referralEmail` /
 > `receivingOfficeEmail`. The API must **not** reject a district office for lacking an
 > `officialEmail`, and must **not** derive the address from master data. Validate the
-> officer-supplied email for **format only** (§6). HQ department referrals still use the
+> officer-supplied email for **format only** (§6). This applies to **HQ-section referrals
+> too**: the officer types the receiving department email; it is never taken from the
 > department's stored `email`.
 
 ### HqDepartment  (master data — frontend type: `HeadquartersDepartment`)
@@ -154,6 +164,12 @@ Role = "district-staff" | "systems-admin"
 ```ts
 { id: string; name: string; email: string; active: boolean }
 ```
+
+> The 6 HQ directorates/departments (canonical `HQ_DIRECTORATES`, names): **BDAR,
+> Client Relations, General, Identification Services, Legal, Marriages**. This one list
+> drives BOTH (a) the directorate a HQ officer is attached to (`User.department`) and
+> (b) the section a client can be referred to at HQ. The `email` is a suggested default
+> only — the officer still types the receiving address per referral (rule above).
 
 ### Service  (master data — frontend type: `ServiceDef`)
 
@@ -366,7 +382,7 @@ These endpoints back that page (see §10 for the full model).
 > migration column) is a bug — fix by isolating that step, not by failing the request.
 
 ### Referral email content (must include)
-Notice Number · Client Full Name · NIN/Application Number · Client Phone · Referring Office · Referring Officer · Card Batch Number (if applicable) · Receiving Office/Department · Service Requested · Reason · referral date & time · **the generated outcome-notice PDF attached, byte-for-byte identical to the client's issued notice**.
+Notice Number · Client Full Name · NIN/Application Number · Client Phone · Referring Office (incl. `referringDepartment` when issued from NIRA Headquarters, e.g. "NIRA Headquarters · BDAR") · Referring Officer · Card Batch Number (if applicable) · Receiving Office/Department · Service Requested · Reason · referral date & time · **the generated outcome-notice PDF attached, byte-for-byte identical to the client's issued notice**.
 
 Subject line for card-collection referrals:
 ```
@@ -411,7 +427,10 @@ for the client. The PDF is **immutable** once issued. See §10.
   - District office referral → `referralOfficeId` + `referralEmail` (officer-typed, valid email format).
   - HQ section referral → `referralDepartmentId` + `referralEmail` (officer-typed, valid email format; not derived from the department).
   - Outreach card path → `cardLocationText` + `cardBatchNumber` + `outreachContactStaffName`.
-- The two card-collection reasons are **mutually exclusive**; reject a payload containing both.
+  - The two card-collection reasons are **mutually exclusive**; reject a payload containing both.
+- **HQ staff attachment:** a `district-staff` user whose `district == "NIRA Headquarters"` MUST have a `department` set to one of the 6 `HQ_DIRECTORATES`. Reject account create/update that omits it (`400`).
+- **No HQ → HQ referral:** if the issuing `office == "NIRA Headquarters"`, reject any notice whose referral destination is `"NIRA Headquarters"` (`400`). HQ may still refer to any district and to the non-NIRA destinations; districts are unchanged and may still refer to HQ.
+- **Referring department capture:** when the issuing `office == "NIRA Headquarters"`, `referringDepartment` is required and must be one of the 6 `HQ_DIRECTORATES`; persist it as a literal snapshot and print it on the notice. For non-HQ offices it must be absent.
 
 ---
 
