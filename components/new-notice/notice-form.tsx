@@ -58,8 +58,11 @@ import {
   DELIVERY_METHODS,
   DESTINATIONS,
   TIMELINES,
-  DISTRICTS,
+  ASSIGNABLE_OFFICES,
   ALL_DISTRICTS,
+  HQ_OFFICE_NAME,
+  HQ_DIRECTORATES,
+  isHqOffice,
   REFERRAL_DISTRICT_DESTINATION,
   REFERRAL_HQ_DESTINATION,
   CARD_AT_DISTRICT_REASON,
@@ -104,6 +107,9 @@ export function NoticeForm() {
 
   // ----- Office (fixed for staff, selectable for admin)
   const [office, setOffice] = useState(fixedOffice)
+  // ----- Referring officer's HQ directorate/department. Prefilled from a HQ
+  // officer's own account; a national admin picks it when issuing from HQ.
+  const [referringDepartment, setReferringDepartment] = useState(account?.department ?? "")
 
   // ----- Client details
   const [phone, setPhone] = useState("")
@@ -198,6 +204,7 @@ export function NoticeForm() {
         setTimelineUnit(d.timelineUnit ?? "working")
         setAdditional(d.additional ?? "")
         if (d.office) setOffice(d.office)
+        if (d.referringDepartment) setReferringDepartment(d.referringDepartment)
       }
     } catch {
       // ignore
@@ -218,6 +225,12 @@ export function NoticeForm() {
     if (deliveryMethod === "sms" && !smsOk) setDeliveryMethod(emailOk ? "email" : "print")
     else if (deliveryMethod === "email" && !emailOk) setDeliveryMethod("print")
   }, [channelSettings.sms, channelSettings.email, emailValid, deliveryMethod])
+
+  // Enforce no HQ → HQ: if the issuing office becomes NIRA Headquarters while a
+  // HQ referral is selected, clear that destination.
+  useEffect(() => {
+    if (isHqOffice(office) && destination === REFERRAL_HQ_DESTINATION) setDestination("")
+  }, [office, destination])
 
   const availableReasons = useMemo(() => reasonsForService(service), [service])
   const otherReasonSelected = reasons.includes("Other")
@@ -314,7 +327,9 @@ export function NoticeForm() {
   const completeCount = Object.values(checks).filter(Boolean).length
   const additionalOk = !additionalRequired || additional.trim().length > 2
   const officeOk = office.length > 0
-  const allComplete = completeCount === 7 && additionalOk && officeOk
+  // A HQ-issued notice must record the referring officer's directorate.
+  const referringDepartmentOk = !isHqOffice(office) || referringDepartment.trim().length > 0
+  const allComplete = completeCount === 7 && additionalOk && officeOk && referringDepartmentOk
 
   const anyInput =
     phone || name || email || nin || service || reasons.length || action || destination || timeline || additional
@@ -328,6 +343,7 @@ export function NoticeForm() {
     }
     const draft = {
       office,
+      referringDepartment,
       phone,
       name,
       email,
@@ -357,6 +373,7 @@ export function NoticeForm() {
     }
   }, [
     office,
+    referringDepartment,
     phone,
     name,
     email,
@@ -386,9 +403,16 @@ export function NoticeForm() {
     () => SERVICES.map((s) => ({ value: s.id, label: s.name, icon: <ServiceIcon name={s.icon} /> })),
     [],
   )
+  // A HQ officer cannot refer to NIRA Headquarters (no HQ → HQ); that option is
+  // removed from their destination list. All district-side options are unchanged.
+  const issuingFromHq = isHqOffice(office)
   const destinationOptions: DisclosureOption[] = useMemo(
-    () => DESTINATIONS.map((d) => ({ value: d, label: d })),
-    [],
+    () =>
+      DESTINATIONS.filter((d) => !(issuingFromHq && d === REFERRAL_HQ_DESTINATION)).map((d) => ({
+        value: d,
+        label: d,
+      })),
+    [issuingFromHq],
   )
   const timelineOptions: DisclosureOption[] = useMemo(() => TIMELINES.map((t) => ({ value: t, label: t })), [])
 
@@ -447,6 +471,7 @@ export function NoticeForm() {
     office,
     officer: account?.name ?? "",
     officerTitle: account?.title ?? "Registration Officer",
+    officerDepartment: isHqOffice(office) ? referringDepartment.trim() || undefined : undefined,
     dateLabel: (now ?? new Date()).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" }),
     timeLabel: (now ?? new Date()).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
     clientName: name,
@@ -510,6 +535,8 @@ export function NoticeForm() {
     setReferralOfficeId("")
     setReferralDepartmentId("")
     setReferralEmail("")
+    // Keep a HQ officer's own directorate; clear a national admin's per-notice pick.
+    setReferringDepartment(account?.department ?? "")
     setTimeline("")
     setTimelineDate("")
     setTimelineNum("")
@@ -522,7 +549,7 @@ export function NoticeForm() {
       // ignore
     }
     phoneRef.current?.focus()
-  }, [])
+  }, [account])
 
   const handleClear = () => {
     if (allComplete || !anyInput) {
@@ -610,6 +637,7 @@ export function NoticeForm() {
       additional: additional || undefined,
       officer: account?.name ?? "",
       office,
+      referringDepartment: isHqOffice(office) ? referringDepartment.trim() || undefined : undefined,
       deliveryMethod,
       // SMS has no gateway and email/print don't send an SMS, so SMS stays Pending
       // unless a real SMS channel is ever selected.
@@ -708,15 +736,46 @@ export function NoticeForm() {
 
       {/* Admin office selection */}
       {isAdmin ? (
-        <SectionCard step="•" title="Issuing Office" description="Select the district office this notice is issued for." complete={officeOk}>
+        <SectionCard step="•" title="Issuing Office" description="Select the office this notice is issued for." complete={officeOk}>
           <DisclosureSelect
             ariaLabel="Issuing office"
             layout="grid"
-            options={DISTRICTS.map((d) => ({ value: d.name, label: d.name, hint: d.code }))}
+            options={ASSIGNABLE_OFFICES.map((d) => ({ value: d.name, label: d.name, hint: d.code }))}
             value={office || null}
             onChange={setOffice}
           />
         </SectionCard>
+      ) : null}
+
+      {/* Referring officer's directorate — required whenever the issuing office
+          is NIRA Headquarters. A national admin picks it; a HQ officer's own
+          directorate is carried from their account and shown read-only. */}
+      {issuingFromHq ? (
+        isAdmin ? (
+          <SectionCard
+            step="•"
+            title="Referring Directorate / Department"
+            description="Select the NIRA Headquarters directorate this notice is issued from."
+            complete={referringDepartmentOk}
+          >
+            <DisclosureSelect
+              ariaLabel="Referring directorate"
+              layout="grid"
+              options={HQ_DIRECTORATES.map((d) => ({ value: d, label: d }))}
+              value={referringDepartment || null}
+              onChange={setReferringDepartment}
+            />
+          </SectionCard>
+        ) : (
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Referring Section</p>
+            <p className="mt-0.5 text-sm font-semibold text-foreground">
+              {HQ_OFFICE_NAME}
+              {referringDepartment ? ` · ${referringDepartment}` : ""}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Printed on the notice as your referring section.</p>
+          </div>
+        )
       ) : null}
 
       {/* Section A: Client details */}

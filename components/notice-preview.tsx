@@ -7,6 +7,8 @@ export interface PreviewData {
   office: string
   officer: string
   officerTitle: string
+  /** Referring officer's HQ directorate/department, when issued from NIRA Headquarters. */
+  officerDepartment?: string
   dateLabel: string
   timeLabel: string
   clientName: string
@@ -81,7 +83,7 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           <span className="font-mono text-sm font-semibold text-primary">{data.noticeNumber}</span>
         </div>
         <div className="text-sm">
-          <span className="block text-xs font-semibold uppercase text-muted-foreground">District Office</span>
+          <span className="block text-xs font-semibold uppercase text-muted-foreground">Issuing Office</span>
           {data.office}
         </div>
         <div className="text-sm">
@@ -139,6 +141,11 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           <span className="text-xs font-semibold uppercase text-muted-foreground">Serving Officer</span>
           <p className="mt-1 text-sm font-medium">{data.officer}</p>
           <p className="text-xs text-muted-foreground">{data.officerTitle}</p>
+          {data.officerDepartment ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Referring Section: <span className="font-medium text-foreground">{data.office} · {data.officerDepartment}</span>
+            </p>
+          ) : null}
           <div className="mt-6 border-t border-dashed border-border pt-1 text-xs text-muted-foreground">
             Officer signature &amp; stamp
           </div>

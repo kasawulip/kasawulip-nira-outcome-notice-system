@@ -292,6 +292,9 @@ export interface NoticeRecord {
   additional?: string
   officer: string
   office: string
+  /** Directorate/department of the referring officer — set only when the
+   *  issuing office is NIRA Headquarters, printed on the notice. */
+  referringDepartment?: string
   deliveryMethod: DeliveryMethod
   smsStatus: DeliveryStatus
   emailStatus?: DeliveryStatus
@@ -472,12 +475,35 @@ export function districtByName(name: string): District | undefined {
   return DISTRICTS.find((d) => d.name === name)
 }
 
+/**
+ * NIRA Headquarters is a first-class assignable office alongside the field
+ * districts: staff can be attached to it and it can issue/refer notices. Unlike
+ * a district it cannot be a referral *destination* from itself (no HQ → HQ).
+ */
+export const HQ_OFFICE_NAME = "NIRA Headquarters"
+
+export function isHqOffice(name: string | undefined): boolean {
+  return name === HQ_OFFICE_NAME
+}
+
+/**
+ * Offices to which staff can be assigned and from which notices can be issued:
+ * every field district plus NIRA Headquarters.
+ */
+export const ASSIGNABLE_OFFICES: District[] = [
+  ...DISTRICTS,
+  { id: "hq", name: HQ_OFFICE_NAME, code: "HQ" },
+]
+
 export interface UserAccount {
   id: string
   name: string
   title: string
   role: Role
   district: string // office/district name; "All Districts" for admin (national scope)
+  /** Required when the assigned office is NIRA Headquarters: the directorate /
+   *  department the officer belongs to (one of HQ_DIRECTORATES). */
+  department?: string
   initials: string
   active: boolean
   email?: string
@@ -586,6 +612,17 @@ export const SEED_ACCOUNTS: UserAccount[] = [
     initials: "PO",
     active: false,
     email: "p.ochieng@nira.go.ug",
+  },
+  {
+    id: "acc-6",
+    name: "Sarah Kirabo",
+    title: "Registration Officer",
+    role: "district-staff",
+    district: HQ_OFFICE_NAME,
+    department: "BDAR",
+    initials: "SK",
+    active: true,
+    email: "s.kirabo@nira.go.ug",
   },
 ]
 
@@ -815,19 +852,32 @@ export interface HeadquartersDepartment {
 }
 
 /**
- * Configurable Headquarters departments/sections. Additional departments can
- * be appended here without changing any front-end code.
+ * Configurable Headquarters directorates/departments/sections. These serve two
+ * purposes with one canonical list: (1) the sections a HQ officer can be
+ * attached to, and (2) the sections a client can be referred to at HQ.
+ * Existing ids (legal / client-relations / bdar) are kept stable so historic
+ * referral records keep resolving; names are the short official forms.
+ * Additional departments can be appended here without changing any front-end code.
  */
 export const HQ_DEPARTMENTS: HeadquartersDepartment[] = [
-  { id: "dept-legal", name: "Legal Department", email: `legal@${NIRA_EMAIL_DOMAIN}`, active: true },
-  { id: "dept-client-relations", name: "Client Relations Office", email: `clientrelations@${NIRA_EMAIL_DOMAIN}`, active: true },
-  { id: "dept-bdar", name: "BDAR Office", email: `bdar@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-bdar", name: "BDAR", email: `bdar@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-client-relations", name: "Client Relations", email: `clientrelations@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-general", name: "General", email: `general@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-identification-services", name: "Identification Services", email: `identification@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-legal", name: "Legal", email: `legal@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-marriages", name: "Marriages", email: `marriages@${NIRA_EMAIL_DOMAIN}`, active: true },
 ]
 
 export function hqDepartmentById(id: string | undefined): HeadquartersDepartment | undefined {
   if (!id) return undefined
   return HQ_DEPARTMENTS.find((d) => d.id === id)
 }
+
+/**
+ * Directorate/department names a HQ-assigned officer must be attached to. Drawn
+ * from the same canonical HQ list so assignment and referral stay in sync.
+ */
+export const HQ_DIRECTORATES: string[] = HQ_DEPARTMENTS.map((d) => d.name)
 
 export type ReferralEmailStatus = "not-required" | "pending" | "sent" | "failed"
 

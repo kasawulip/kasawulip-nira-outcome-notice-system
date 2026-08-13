@@ -62,7 +62,16 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { StatCard } from "@/components/stat-card"
-import { DEFAULT_PASSWORD, DISTRICTS, ROLE_LABEL, type Role, type UserAccount } from "@/lib/nira"
+import {
+  DEFAULT_PASSWORD,
+  ASSIGNABLE_OFFICES,
+  HQ_DIRECTORATES,
+  HQ_OFFICE_NAME,
+  isHqOffice,
+  ROLE_LABEL,
+  type Role,
+  type UserAccount,
+} from "@/lib/nira"
 import { useDataStore } from "@/components/data-store-context"
 
 function initialsFor(name: string) {
@@ -125,22 +134,26 @@ export function AdminPanel() {
 
   const [newName, setNewName] = useState("")
   const [newRole, setNewRole] = useState<Role>("district-staff")
-  const [newDistrict, setNewDistrict] = useState<string>(DISTRICTS[0].name)
+  const [newDistrict, setNewDistrict] = useState<string>(ASSIGNABLE_OFFICES[0].name)
+  const [newDepartment, setNewDepartment] = useState<string>("")
   const [newEmail, setNewEmail] = useState("")
   const [districtOpen, setDistrictOpen] = useState(false)
   const [districtQuery, setDistrictQuery] = useState("")
   const [resetTarget, setResetTarget] = useState<UserAccount | null>(null)
 
-  // Search-first filtering so the assignable-district list stays compact and
+  // Search-first filtering so the assignable-office list stays compact and
   // never expands to cover the account form.
   const districtSearch = districtQuery.trim().toLowerCase()
   const districtMatches = useMemo(
     () =>
       districtSearch
-        ? DISTRICTS.filter((d) => `${d.name} ${d.code}`.toLowerCase().includes(districtSearch))
-        : DISTRICTS,
+        ? ASSIGNABLE_OFFICES.filter((d) => `${d.name} ${d.code}`.toLowerCase().includes(districtSearch))
+        : ASSIGNABLE_OFFICES,
     [districtSearch],
   )
+
+  // HQ officers must additionally be attached to a directorate/department.
+  const requiresDepartment = newRole === "district-staff" && isHqOffice(newDistrict)
 
   const admins = accounts.filter((a) => a.role === "systems-admin").length
   const staff = accounts.filter((a) => a.role === "district-staff").length
@@ -159,12 +172,17 @@ export function AdminPanel() {
       toast.error("Enter the officer's full name")
       return
     }
+    if (requiresDepartment && !newDepartment) {
+      toast.error("Select the HQ directorate / department for this officer")
+      return
+    }
     const account: UserAccount = {
       id: `acc-${Date.now()}`,
       name: newName.trim(),
       title: newRole === "systems-admin" ? "Systems Administrator" : "Registration Officer",
       role: newRole,
       district: newRole === "systems-admin" ? "All Districts" : newDistrict,
+      department: requiresDepartment ? newDepartment : undefined,
       initials: initialsFor(newName.trim()),
       active: true,
       email: newEmail.trim() || undefined,
@@ -175,6 +193,7 @@ export function AdminPanel() {
     addAccount(account)
     setNewName("")
     setNewEmail("")
+    setNewDepartment("")
     toast.success(`${account.name} added. Default password: ${DEFAULT_PASSWORD}`)
   }
 
@@ -186,7 +205,7 @@ export function AdminPanel() {
   }
 
   const districtCounts = useMemo(() => {
-    return DISTRICTS.map((d) => ({
+    return ASSIGNABLE_OFFICES.map((d) => ({
       ...d,
       officers: accounts.filter((a) => a.district === d.name).length,
       notices: combined.filter((n) => n.office === d.name).length,
@@ -359,7 +378,7 @@ export function AdminPanel() {
                   </Field>
                   {newRole === "district-staff" ? (
                     <Field>
-                      <FieldLabel>Assigned district</FieldLabel>
+                      <FieldLabel>Assigned office</FieldLabel>
                       <Popover
                         open={districtOpen}
                         onOpenChange={(o) => {
@@ -419,13 +438,36 @@ export function AdminPanel() {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      <FieldDescription>Staff only see notices for this district.</FieldDescription>
+                      <FieldDescription>
+                        Staff only see notices for this office. NIRA Headquarters can refer to any district, but not to
+                        itself.
+                      </FieldDescription>
                     </Field>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Systems Admins have national access across all districts.
                     </p>
                   )}
+                  {requiresDepartment ? (
+                    <Field>
+                      <FieldLabel>Directorate / Department</FieldLabel>
+                      <Select value={newDepartment} onValueChange={(v) => setNewDepartment(v ?? "")}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select directorate / department..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {HQ_DIRECTORATES.map((d) => (
+                            <SelectItem key={d} value={d}>
+                              {d}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FieldDescription>
+                        HQ officers must be attached to a directorate; it is printed on notices they issue.
+                      </FieldDescription>
+                    </Field>
+                  ) : null}
                 </FieldGroup>
               </CardContent>
               <CardFooter className="flex-col items-stretch gap-2">
