@@ -433,14 +433,22 @@ export const COMPLAINTS_CONTACTS = {
 }
 
 // ---------------------------------------------------------------------------
-// Roles, districts & accounts — exactly two roles, no intermediate tiers.
+// Roles, districts & accounts. Three roles: district-front-line staff, NIRA
+// Headquarters staff (attached to a directorate), and national systems admin.
 // ---------------------------------------------------------------------------
 
-export type Role = "district-staff" | "systems-admin"
+export type Role = "district-staff" | "hq-staff" | "systems-admin"
 
 export const ROLE_LABEL: Record<Role, string> = {
   "district-staff": "District Staff",
+  "hq-staff": "NIRA Hqtrs Staff",
   "systems-admin": "Systems Admin",
+}
+
+/** True for any front-line registration officer (district OR headquarters) —
+ *  i.e. everyone who issues notices, as opposed to a national systems admin. */
+export function isRegistrationStaff(role: Role | undefined | null): boolean {
+  return role === "district-staff" || role === "hq-staff"
 }
 
 export interface District {
@@ -501,8 +509,8 @@ export interface UserAccount {
   title: string
   role: Role
   district: string // office/district name; "All Districts" for admin (national scope)
-  /** Required when the assigned office is NIRA Headquarters: the directorate /
-   *  department the officer belongs to (one of HQ_DIRECTORATES). */
+  /** Required for hq-staff: the NIRA Headquarters directorate / department the
+   *  officer belongs to (one of HQ_DIRECTORATES). Unused for other roles. */
   department?: string
   initials: string
   active: boolean
@@ -617,7 +625,7 @@ export const SEED_ACCOUNTS: UserAccount[] = [
     id: "acc-6",
     name: "Sarah Kirabo",
     title: "Registration Officer",
-    role: "district-staff",
+    role: "hq-staff",
     district: HQ_OFFICE_NAME,
     department: "BDAR",
     initials: "SK",

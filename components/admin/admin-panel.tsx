@@ -65,9 +65,9 @@ import { StatCard } from "@/components/stat-card"
 import {
   DEFAULT_PASSWORD,
   ASSIGNABLE_OFFICES,
+  DISTRICTS,
   HQ_DIRECTORATES,
   HQ_OFFICE_NAME,
-  isHqOffice,
   ROLE_LABEL,
   type Role,
   type UserAccount,
@@ -83,9 +83,10 @@ function initialsFor(name: string) {
     .join("")
 }
 
-const ROLE_TONE: Record<Role, "default" | "secondary"> = {
+const ROLE_TONE: Record<Role, "default" | "secondary" | "outline"> = {
   "systems-admin": "default",
   "district-staff": "secondary",
+  "hq-staff": "outline",
 }
 
 function HealthCard({
@@ -134,7 +135,7 @@ export function AdminPanel() {
 
   const [newName, setNewName] = useState("")
   const [newRole, setNewRole] = useState<Role>("district-staff")
-  const [newDistrict, setNewDistrict] = useState<string>(ASSIGNABLE_OFFICES[0].name)
+  const [newDistrict, setNewDistrict] = useState<string>(DISTRICTS[0].name)
   const [newDepartment, setNewDepartment] = useState<string>("")
   const [newEmail, setNewEmail] = useState("")
   const [districtOpen, setDistrictOpen] = useState(false)
@@ -147,16 +148,18 @@ export function AdminPanel() {
   const districtMatches = useMemo(
     () =>
       districtSearch
-        ? ASSIGNABLE_OFFICES.filter((d) => `${d.name} ${d.code}`.toLowerCase().includes(districtSearch))
-        : ASSIGNABLE_OFFICES,
+        ? DISTRICTS.filter((d) => `${d.name} ${d.code}`.toLowerCase().includes(districtSearch))
+        : DISTRICTS,
     [districtSearch],
   )
 
-  // HQ officers must additionally be attached to a directorate/department.
-  const requiresDepartment = newRole === "district-staff" && isHqOffice(newDistrict)
+  // NIRA Hqtrs Staff are always attached to Headquarters and must additionally
+  // be attached to a directorate/department.
+  const isHqRole = newRole === "hq-staff"
+  const requiresDepartment = isHqRole
 
   const admins = accounts.filter((a) => a.role === "systems-admin").length
-  const staff = accounts.filter((a) => a.role === "district-staff").length
+  const staff = accounts.filter((a) => a.role === "district-staff" || a.role === "hq-staff").length
   const activeCount = accounts.filter((a) => a.active).length
 
   // System health, derived from live store data.
@@ -181,7 +184,8 @@ export function AdminPanel() {
       name: newName.trim(),
       title: newRole === "systems-admin" ? "Systems Administrator" : "Registration Officer",
       role: newRole,
-      district: newRole === "systems-admin" ? "All Districts" : newDistrict,
+      district:
+        newRole === "systems-admin" ? "All Districts" : isHqRole ? HQ_OFFICE_NAME : newDistrict,
       department: requiresDepartment ? newDepartment : undefined,
       initials: initialsFor(newName.trim()),
       active: true,
@@ -372,6 +376,7 @@ export function AdminPanel() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="district-staff">District Staff</SelectItem>
+                        <SelectItem value="hq-staff">NIRA Hqtrs Staff</SelectItem>
                         <SelectItem value="systems-admin">Systems Admin</SelectItem>
                       </SelectContent>
                     </Select>
