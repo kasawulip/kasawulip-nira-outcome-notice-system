@@ -18,7 +18,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "New Notice",
     short: "New",
     icon: FilePlus2,
-    roles: ["district-staff", "systems-admin"],
+    roles: ["district-staff", "hq-staff", "systems-admin"],
     bottom: true,
   },
   {
@@ -26,7 +26,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Notice Register",
     short: "Register",
     icon: ListChecks,
-    roles: ["district-staff", "systems-admin"],
+    roles: ["district-staff", "hq-staff", "systems-admin"],
     bottom: true,
   },
   {
@@ -34,7 +34,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Cases",
     short: "Cases",
     icon: ClipboardList,
-    roles: ["district-staff", "systems-admin"],
+    roles: ["district-staff", "hq-staff", "systems-admin"],
     bottom: true,
   },
   {
@@ -42,7 +42,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Reports",
     short: "Reports",
     icon: BarChart3,
-    roles: ["district-staff", "systems-admin"],
+    roles: ["district-staff", "hq-staff", "systems-admin"],
     bottom: true,
   },
   {

@@ -443,11 +443,15 @@ export function AdminPanel() {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      <FieldDescription>
-                        Staff only see notices for this office. NIRA Headquarters can refer to any district, but not to
-                        itself.
-                      </FieldDescription>
+                      <FieldDescription>Staff only see notices for this district office.</FieldDescription>
                     </Field>
+                  ) : isHqRole ? (
+                    <div className="rounded-lg border border-border bg-muted/40 px-3 py-2">
+                      <p className="text-xs font-medium text-foreground">Attached to {HQ_OFFICE_NAME}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        HQ staff issue from Headquarters and can refer to any district, but not to Headquarters itself.
+                      </p>
+                    </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
                       Systems Admins have national access across all districts.

@@ -10,9 +10,10 @@ reference.
 > first-login change, admin reset; (3) 6-region office vocabulary + 140-district seed;
 > (4) issuance hardening — PDF/email are best-effort side effects after the notice is
 > committed, so `POST /notices` never returns 500 for a delivery failure (permanent fix
-> for the HQ/BDAR 500); (5) NIRA Headquarters is an assignable/issuing office — HQ staff
-> carry a department (6 directorates), HQ-issued notices carry a printed referringDepartment,
-> and HQ→HQ referrals are blocked. See the API-CONTRACT.md changelog for the field-level detail.
+> for the HQ/BDAR 500); (5) NIRA Headquarters is an assignable/issuing office with a new
+> `hq-staff` role ("NIRA Hqtrs Staff") — HQ staff carry a department (6 directorates),
+> HQ-issued notices carry a printed referringDepartment, and HQ→HQ referrals are blocked.
+> See the API-CONTRACT.md changelog for the field-level detail.
 
 ---
 
@@ -32,18 +33,22 @@ referrals that must email a receiving office.
 
 TECH EXPECTATIONS
 - REST, JSON request/response, resource-oriented routes.
-- JWT (or session) auth with two roles: district-staff and systems-admin.
-- Data scoping is mandatory: district-staff may only read/write notices for their
-  own office; systems-admin has national scope. Enforce on every endpoint
-  server-side; never trust a client-supplied office.
+- JWT (or session) auth with three roles: district-staff, hq-staff ("NIRA Hqtrs
+  Staff"), and systems-admin. hq-staff behaves like district-staff for permissions but
+  is always at office "NIRA Headquarters" and carries a department (one of 6 directorates).
+- Data scoping is mandatory: district-staff and hq-staff may only read/write notices
+  for their own office (hq-staff's office is always "NIRA Headquarters"); systems-admin
+  has national scope. Enforce on every endpoint server-side; never trust a
+  client-supplied office.
 - Timestamps in ISO 8601. Server generates all IDs, notice numbers, and timestamps.
 - Pagination + filtering on list endpoints.
 
 ENTITIES (see API-CONTRACT.md for exact fields)
-- User: id, name, title, role, office/district, initials, active, email,
-  mustChangePassword (forces a password change at next login), passwordHash,
-  department? (REQUIRED when district == "NIRA Headquarters"; one of the 6 HQ
-  directorates below).
+- User: id, name, title, role (district-staff | hq-staff | systems-admin),
+  office/district, initials, active, email, mustChangePassword (forces a password
+  change at next login), passwordHash, department? (REQUIRED when role == "hq-staff",
+  whose district is always "NIRA Headquarters"; one of the 6 HQ directorates below;
+  absent for other roles).
 - Notice: core record with client details, service, reasons[], action, destination,
   timeline, delivery/case statuses, priority, referringDepartment? (referring officer's
   HQ directorate — set only when the issuing office is NIRA Headquarters; printed on the
@@ -126,8 +131,9 @@ BUSINESS RULES
   section, not the address) and do NOT reject an office for lacking a stored email;
   validate the officer-supplied address for format only.
 - NIRA Headquarters office rules: (a) HQ is assignable/issuing like a district;
-  (b) a district-staff user assigned to HQ MUST have a department (one of the 6
-  directorates) — reject creation without it; (c) NO HQ->HQ referral: when the issuing
+  (b) an hq-staff user is always at "NIRA Headquarters" and MUST have a department (one
+  of the 6 directorates) — reject creation without it; department must be absent for
+  other roles; (c) NO HQ->HQ referral: when the issuing
   office is NIRA Headquarters, reject a notice whose referral destination is NIRA
   Headquarters (HQ may still refer to any district and to non-NIRA destinations; districts
   are unchanged and may still refer to HQ); (d) when the issuing office is HQ, capture a
@@ -166,8 +172,8 @@ BUSINESS RULES
   gateway is provided.
 
 SEED DATA
-Seed two demo users (one district-staff in "Makindye District Office", one
-systems-admin, one district-staff attached to "NIRA Headquarters" with department
+Seed demo users (one district-staff in "Makindye District Office", one
+systems-admin, and one hq-staff at "NIRA Headquarters" with department
 "BDAR") plus the roster, all with password "Welcome123" (seed accounts may
 have mustChangePassword=false; newly created accounts always true). Seed the
 assignable/issuing offices WITH codes (MAK, KLA, WAK, MUK, NSG, NSK, LUW, KAW, NAK,

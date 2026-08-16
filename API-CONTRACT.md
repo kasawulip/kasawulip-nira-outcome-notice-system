@@ -16,17 +16,20 @@ match these shapes exactly — the frontend consumes them with no field renaming
 > 2. **User account credential lifecycle:** new field `User.mustChangePassword`, default password `Welcome123`, forced first-login change, and admin password reset. New endpoints `POST /auth/change-password` and `POST /users/:id/reset-password`. Affects §1, §2, §4, §5a.
 > 3. **Office regions expanded 5 → 6** (`Central | Mid Western | Eastern | Western | North Eastern | North Western`) and the office seed grew to 140 referral-target districts (no `code`, no email) plus a 16-office assignable/issuing set (with `code`). Affects §2, §3, §7.
 > 4. **Issuance hardening (permanent fix for the `POST /notices` 500 on HQ/BDAR referrals).** PDF and referral-email are best-effort side effects wrapped in try/catch **after** the notice is committed; a notice is issued as `201` even if email is unconfigured or fails (status degrades to `pending`/`failed`). A `500` is now only legitimate if the DB write of the notice itself fails. Added an exhaustive error contract table and a global failure-isolation rule. Email/SMS env vars are explicitly optional. Affects §5 issue flow, Delivery, §8.
-> 5. **NIRA Headquarters as an assignable/referring office.** HQ (`code "HQ"`) joins the assignable set; HQ `district-staff` must carry a `department` (one of 6 `HQ_DIRECTORATES`: BDAR, Client Relations, General, Identification Services, Legal, Marriages). Notices issued from HQ carry a required `referringDepartment` snapshot, printed on the notice and included in the referral email. New rule: **no HQ→HQ referral** (districts unchanged). The 6 directorates now drive both staff assignment and the HQ referral picker. Affects §2 (User, Notice), §3 (Office, HqDepartment), §5, §6.
+> 5. **NIRA Headquarters as an assignable/referring office + dedicated role.** A new `hq-staff` role ("NIRA Hqtrs Staff") joins `district-staff`/`systems-admin`; HQ (`code "HQ"`) joins the assignable set; `hq-staff` are always at `"NIRA Headquarters"` and must carry a `department` (one of 6 `HQ_DIRECTORATES`: BDAR, Client Relations, General, Identification Services, Legal, Marriages). Notices issued from HQ carry a required `referringDepartment` snapshot, printed on the notice and included in the referral email. New rule: **no HQ→HQ referral** (districts unchanged). The 6 directorates now drive both staff assignment and the HQ referral picker. Affects §2 (User, Notice), §3 (Office, HqDepartment), §5, §6.
 
 ---
 
 ## 1. Auth & roles
 
-Exactly two roles. No intermediate tiers.
+Three roles. No intermediate tiers.
 
 ```
-Role = "district-staff" | "systems-admin"
+Role = "district-staff" | "hq-staff" | "systems-admin"
 ```
+
+- `district-staff` — front-line officer at a field district office.
+- `hq-staff` — "NIRA Hqtrs Staff": front-line officer at NIRA Headquarters. Behaves exactly like `district-staff` for scoping/permissions, but their `district` is always `"NIRA Headquarters"` and they MUST carry a `department` (one of the 6 `HQ_DIRECTORATES`). Both roles are "registration staff" (issue notices); only these two are staff, and only `systems-admin` is national.
 
 - `POST /auth/login` — body `{ email, password }` → `{ token, user }`. The returned `user` includes `mustChangePassword`; the frontend gates the whole app on it (see below).
 - `POST /auth/logout`
@@ -36,7 +39,7 @@ Role = "district-staff" | "systems-admin"
 **Password lifecycle (see §5a):** new accounts are created server-side with the shared default password **`Welcome123`** and `mustChangePassword = true`. A user cannot use the app until they change it. An admin reset (`POST /users/:id/reset-password`) restores the default and re-arms `mustChangePassword = true`.
 
 **Scoping (enforce on every endpoint, server-side):**
-- `district-staff` may only read/write notices where `notice.office === user.district`.
+- `district-staff` and `hq-staff` may only read/write notices where `notice.office === user.district` (for `hq-staff` that is always `"NIRA Headquarters"`).
 - `systems-admin` has national scope (their `district` is the sentinel `"All Districts"`).
 - Never accept a client-supplied office/scope; derive it from the authenticated user.
 - Admin-only: user management, master-data CRUD, channel settings.
@@ -52,9 +55,9 @@ Role = "district-staff" | "systems-admin"
   id: string
   name: string
   title: string
-  role: "district-staff" | "systems-admin"
-  district: string        // office name, or "All Districts" for admin (national scope). May be a field district OR "NIRA Headquarters".
-  department?: string      // REQUIRED when district == "NIRA Headquarters": the officer's directorate (one of §3 HQ_DIRECTORATES). Omitted for district officers and admins.
+  role: "district-staff" | "hq-staff" | "systems-admin"
+  district: string        // office name, or "All Districts" for admin (national scope). Field district for district-staff; always "NIRA Headquarters" for hq-staff.
+  department?: string      // REQUIRED when role == "hq-staff" (district is then "NIRA Headquarters"): the officer's directorate (one of §3 HQ_DIRECTORATES). Omitted for district-staff and admins.
   initials: string
   active: boolean
   email?: string
@@ -428,14 +431,14 @@ for the client. The PDF is **immutable** once issued. See §10.
   - HQ section referral → `referralDepartmentId` + `referralEmail` (officer-typed, valid email format; not derived from the department).
   - Outreach card path → `cardLocationText` + `cardBatchNumber` + `outreachContactStaffName`.
   - The two card-collection reasons are **mutually exclusive**; reject a payload containing both.
-- **HQ staff attachment:** a `district-staff` user whose `district == "NIRA Headquarters"` MUST have a `department` set to one of the 6 `HQ_DIRECTORATES`. Reject account create/update that omits it (`400`).
+- **HQ staff attachment:** a user with `role == "hq-staff"` MUST have `district == "NIRA Headquarters"` and a `department` set to one of the 6 `HQ_DIRECTORATES`. Reject account create/update that omits the department (`400`). Conversely, `department` must be absent for `district-staff` and `systems-admin`.
 - **No HQ → HQ referral:** if the issuing `office == "NIRA Headquarters"`, reject any notice whose referral destination is `"NIRA Headquarters"` (`400`). HQ may still refer to any district and to the non-NIRA destinations; districts are unchanged and may still refer to HQ.
 - **Referring department capture:** when the issuing `office == "NIRA Headquarters"`, `referringDepartment` is required and must be one of the 6 `HQ_DIRECTORATES`; persist it as a literal snapshot and print it on the notice. For non-HQ offices it must be absent.
 
 ---
 
 ## 7. Seed data
-- **Users:** one `district-staff` in "Makindye District Office" (Paul Kasawuli, `p.kasawuli@nira.go.ug`) and one `systems-admin` with national scope (Miriam Achieng, `m.achieng@nira.go.ug`); plus the roster in `SEED_ACCOUNTS` (Grace Nabbosa, John Okello, Amina Namusoke, Peter Ochieng — the last `active: false`). Seed every account with password `Welcome123`; seed accounts may set `mustChangePassword = false` (pre-onboarded) while **newly created** accounts always get `true`.
+- **Users:** one `district-staff` in "Makindye District Office" (Paul Kasawuli, `p.kasawuli@nira.go.ug`), one `systems-admin` with national scope (Miriam Achieng, `m.achieng@nira.go.ug`), and one `hq-staff` at "NIRA Headquarters" with department "BDAR" (Sarah Kirabo, `s.kirabo@nira.go.ug`); plus the roster in `SEED_ACCOUNTS` (Grace Nabbosa, John Okello, Amina Namusoke, Peter Ochieng — the last `active: false`). Seed every account with password `Welcome123`; seed accounts may set `mustChangePassword = false` (pre-onboarded) while **newly created** accounts always get `true`.
 - **Offices:**
   - **Assignable / issuing set** (has `code`, used for notice numbers + staff assignment): `MAK` (Makindye), `KLA` (Kampala Central), `WAK` (Wakiso), `MUK` (Mukono), plus `NSG, NSK, LUW, KAW, NAK, RUB, KAY, BUV, BUI, GOM, MPI, BUT` — all `region: "Central"` — and `HQ` (Headquarters).
   - **Referral-target set** (the full 140-district roster in `UGANDA_DISTRICT_SEED`): `type: "DISTRICT_OFFICE"`, id `loc-<slug>`, **no `code`, no `officialEmail`** (district emails are typed per referral, never stored). Regions use the 6-value `Region` vocab (§3).
