@@ -1,5 +1,5 @@
-import { QrCode } from "lucide-react"
 import { NiraLogo } from "@/components/nira-logo"
+import { QRCode } from "@/components/qr-code"
 import { maskPhone, maskNin, COMPLAINTS_CONTACTS } from "@/lib/nira"
 
 export interface PreviewData {
@@ -7,6 +7,8 @@ export interface PreviewData {
   office: string
   officer: string
   officerTitle: string
+  /** Referring officer's HQ directorate/department, when issued from NIRA Headquarters. */
+  officerDepartment?: string
   dateLabel: string
   timeLabel: string
   clientName: string
@@ -17,8 +19,18 @@ export interface PreviewData {
   reasons: string[]
   action: string
   destination: string
+  /** Email address of the receiving HQ department, when the referral is to HQ. */
+  referralEmail?: string
+  /** Card-collection referral details (Collection of National ID only). */
+  cardLocationType?: "DISTRICT_OFFICE" | "LOCAL_OUTREACH"
+  cardLocationLabel?: string
+  cardBatchNumber?: string
+  cardReceivingEmail?: string
+  cardContactPerson?: string
   timeline: string
   additional?: string
+  /** Absolute verification URL encoded into the QR (blank on drafts). */
+  verifyUrl?: string
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -32,7 +44,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   )
 }
 
-// A one-page A4 reproduction of the official NIRA Client Services Outcome Notice.
+// A one-page A4 reproduction of the Central Region Client Services Outcome Notice (pilot/study).
 export function NoticePreview({ data }: { data: PreviewData }) {
   return (
     <div className="mx-auto w-full max-w-[820px] bg-card p-6 text-foreground shadow-sm sm:p-10">
@@ -42,17 +54,17 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           <NiraLogo variant="dark" className="size-12 text-base" />
           <div className="flex flex-col">
             <span className="font-serif text-base font-bold leading-tight text-primary sm:text-lg">
-              National Identification and Registration Authority
+              Central Region
             </span>
-            <span className="text-xs text-muted-foreground">Republic of Uganda</span>
+            <span className="text-xs text-muted-foreground">Client Services · Pilot / Study System</span>
           </div>
         </div>
-        <div className="hidden flex-col items-center sm:flex">
-          <div className="flex size-16 items-center justify-center rounded-md border border-border bg-muted">
-            <QrCode className="size-10 text-muted-foreground" aria-hidden="true" />
+        {data.verifyUrl ? (
+          <div className="hidden flex-col items-center sm:flex">
+            <QRCode value={data.verifyUrl} size={72} className="border border-border p-1" />
+            <span className="mt-1 text-[10px] text-muted-foreground">Scan to verify</span>
           </div>
-          <span className="mt-1 text-[10px] text-muted-foreground">Scan to verify</span>
-        </div>
+        ) : null}
       </div>
 
       <div className="mt-4 text-center">
@@ -71,7 +83,7 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           <span className="font-mono text-sm font-semibold text-primary">{data.noticeNumber}</span>
         </div>
         <div className="text-sm">
-          <span className="block text-xs font-semibold uppercase text-muted-foreground">District Office</span>
+          <span className="block text-xs font-semibold uppercase text-muted-foreground">Issuing Office</span>
           {data.office}
         </div>
         <div className="text-sm">
@@ -99,7 +111,26 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           )}
         </Row>
         <Row label="Action Required">{data.action || "—"}</Row>
-        <Row label="Where to Go Next">{data.destination || "—"}</Row>
+        <Row label="Where to Go Next">
+          <span className="font-medium">{data.destination || "—"}</span>
+          {data.referralEmail ? (
+            <span className="mt-0.5 block text-xs text-muted-foreground">Referral email: {data.referralEmail}</span>
+          ) : null}
+        </Row>
+        {data.cardLocationType ? (
+          <>
+            <Row label="Card Collection Location">
+              <span className="font-medium">{data.cardLocationLabel || "—"}</span>
+            </Row>
+            {data.cardBatchNumber ? <Row label="Card Batch Number">{data.cardBatchNumber}</Row> : null}
+            {data.cardLocationType === "DISTRICT_OFFICE" && data.cardReceivingEmail ? (
+              <Row label="Receiving Office Email">{data.cardReceivingEmail}</Row>
+            ) : null}
+            {data.cardLocationType === "LOCAL_OUTREACH" && data.cardContactPerson ? (
+              <Row label="Officer / Staff to Contact">{data.cardContactPerson}</Row>
+            ) : null}
+          </>
+        ) : null}
         <Row label="Expected Timeline">{data.timeline || "—"}</Row>
         {data.additional ? <Row label="Additional Details">{data.additional}</Row> : null}
       </div>
@@ -110,6 +141,11 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           <span className="text-xs font-semibold uppercase text-muted-foreground">Serving Officer</span>
           <p className="mt-1 text-sm font-medium">{data.officer}</p>
           <p className="text-xs text-muted-foreground">{data.officerTitle}</p>
+          {data.officerDepartment ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Referring Section: <span className="font-medium text-foreground">{data.office} · {data.officerDepartment}</span>
+            </p>
+          ) : null}
           <div className="mt-6 border-t border-dashed border-border pt-1 text-xs text-muted-foreground">
             Officer signature &amp; stamp
           </div>
@@ -125,6 +161,32 @@ export function NoticePreview({ data }: { data: PreviewData }) {
           </div>
         </div>
       </div>
+
+      {/* QR verification + offline-friendly fallback */}
+      {data.verifyUrl ? (
+        <div className="mt-5 flex flex-col items-center gap-4 rounded-md border border-border bg-muted/40 p-4 sm:flex-row">
+          <QRCode value={data.verifyUrl} size={128} errorCorrectionLevel="M" className="shrink-0" />
+          <div className="flex flex-col gap-1 text-center sm:text-left">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Verify this notice
+            </span>
+            <p className="text-sm text-foreground">
+              Present this QR code at the NIRA office you have been referred to. It can be scanned from a
+              printout, screenshot, or phone screen.
+            </p>
+            <dl className="mt-1 flex flex-col gap-0.5 text-sm">
+              <div className="flex flex-col sm:flex-row sm:gap-2">
+                <dt className="font-semibold text-muted-foreground">Notice No.:</dt>
+                <dd className="font-mono font-semibold text-primary">{data.noticeNumber}</dd>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:gap-2">
+                <dt className="font-semibold text-muted-foreground">Referral Destination:</dt>
+                <dd className="font-medium">{data.destination || "—"}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      ) : null}
 
       {/* Disclaimer + contacts */}
       <div className="mt-4 rounded-md border border-warning/40 bg-warning/10 p-3 text-xs text-warning-foreground">

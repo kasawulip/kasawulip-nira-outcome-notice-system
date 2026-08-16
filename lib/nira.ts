@@ -38,6 +38,10 @@ export const SERVICES: ServiceDef[] = [
   { id: "other", name: "Other", icon: "ellipsis" },
 ]
 
+export function serviceIcon(id: ServiceId | string): string {
+  return SERVICES.find((s) => s.id === id)?.icon ?? "ellipsis"
+}
+
 export function serviceName(id: ServiceId | string): string {
   return SERVICES.find((s) => s.id === id)?.name ?? String(id)
 }
@@ -58,11 +62,19 @@ export const GENERAL_REASONS: string[] = [
   "Other",
 ]
 
+// Card-collection reasons that trigger precise card-location capture. Kept as
+// exported constants so the form and PDF can key their conditional logic off
+// the exact strings rather than duplicating them.
+export const CARD_AT_DISTRICT_REASON = "Card is available at another NIRA District Office"
+export const CARD_AT_OUTREACH_REASON =
+  "Card is available at another NIRA outreach/service station within this District"
+
 // Service-specific priority reasons shown first for particular services.
 const SERVICE_REASONS: Partial<Record<ServiceId, string[]>> = {
   collection: [
     "Card not yet available at the office",
-    "Card dispatched to another office",
+    CARD_AT_DISTRICT_REASON,
+    CARD_AT_OUTREACH_REASON,
     "Biometric verification unsuccessful",
     "Records could not be verified",
     "System or network interruption",
@@ -125,8 +137,10 @@ export function suggestAction(service: ServiceId | null, reasons: string[]): str
       "Await communication from NIRA. Your application is still under review.",
     "Card not yet available at the office":
       "Await notification that your National ID card has arrived at this office before returning to collect it.",
-    "Card dispatched to another office":
-      "Collect your National ID card from the office to which it was dispatched.",
+    [CARD_AT_DISTRICT_REASON]:
+      "Proceed to the indicated NIRA District Office for card collection and present this notice where applicable.",
+    [CARD_AT_OUTREACH_REASON]:
+      "Proceed to the indicated outreach/service station and ask for the named NIRA staff member for card collection.",
     "Record requires further investigation":
       "Await communication from NIRA while your record is investigated.",
     "Client attended the wrong office":
@@ -142,7 +156,7 @@ export function suggestAction(service: ServiceId | null, reasons: string[]): str
 
 export const DESTINATIONS = [
   "Return to this office",
-  "Another NIRA office",
+  "Another NIRA District Office",
   "NIRA Headquarters",
   "Health facility",
   "Local Council",
@@ -151,6 +165,10 @@ export const DESTINATIONS = [
   "Await communication from NIRA",
   "Other",
 ] as const
+
+// Destinations that require capturing a precise receiving office / department.
+export const REFERRAL_DISTRICT_DESTINATION = "Another NIRA District Office"
+export const REFERRAL_HQ_DESTINATION = "NIRA Headquarters"
 
 export const TIMELINES = [
   "Same day",
@@ -179,8 +197,8 @@ export const OFFICERS = [
 ] as const
 
 export const DELIVERY_METHODS = [
-  { id: "sms", label: "SMS only" },
-  { id: "sms-email", label: "SMS and email" },
+  { id: "sms", label: "SMS" },
+  { id: "email", label: "Email" },
   { id: "print", label: "Print copy" },
 ] as const
 export type DeliveryMethod = (typeof DELIVERY_METHODS)[number]["id"]
@@ -210,6 +228,37 @@ export const CASE_STATUSES: CaseStatus[] = [
 
 export type DeliveryStatus = "Pending" | "Queued" | "Sent" | "Delivered" | "Failed"
 
+/**
+ * QR-based referral tracking lifecycle. Distinct from `caseStatus` (the internal
+ * NIRA workflow): this lifecycle follows the physical journey of the referral as
+ * it is scanned/acknowledged at the receiving office.
+ */
+export type TrackingStatus =
+  | "ISSUED"
+  | "VIEWED"
+  | "RECEIVED AT DESTINATION"
+  | "ACTIONED"
+  | "CLOSED"
+  | "CANCELLED"
+
+export const TRACKING_STATUSES: TrackingStatus[] = [
+  "ISSUED",
+  "VIEWED",
+  "RECEIVED AT DESTINATION",
+  "ACTIONED",
+  "CLOSED",
+  "CANCELLED",
+]
+
+/**
+ * A referral (and its QR) stays valid until it is administratively closed or
+ * cancelled — it must never expire on a timer, since clients may take time to
+ * report to the receiving office.
+ */
+export function isNoticeValid(status: TrackingStatus | undefined): boolean {
+  return status !== "CLOSED" && status !== "CANCELLED"
+}
+
 export interface NoticeRecord {
   id: string
   noticeNumber: string
@@ -222,10 +271,30 @@ export interface NoticeRecord {
   reasons: string[]
   action: string
   destination: string
+  // Precise referral capture (stable ids reference master data).
+  referralDestinationType?: ReferralLocationType
+  referralOfficeId?: string
+  referralDepartmentId?: string
+  referralEmail?: string
+  referralEmailStatus?: ReferralEmailStatus
+  referralEmailSentAt?: string // ISO
+  // Card-collection referral capture. Snapshots (name/email/batch/location/staff)
+  // are stored literally so later master-data edits never alter past notices.
+  cardLocationType?: CardLocationType
+  cardLocationOfficeId?: string
+  cardLocationText?: string // snapshot: district office name OR outreach location
+  cardBatchNumber?: string
+  receivingOfficeEmail?: string // snapshot of the office email at issue time
+  outreachContactStaffName?: string
+  outreachContactStaffId?: string
+  outreachContactStaffPhone?: string
   timeline: string
   additional?: string
   officer: string
   office: string
+  /** Directorate/department of the referring officer — set only when the
+   *  issuing office is NIRA Headquarters, printed on the notice. */
+  referringDepartment?: string
   deliveryMethod: DeliveryMethod
   smsStatus: DeliveryStatus
   emailStatus?: DeliveryStatus
@@ -233,6 +302,19 @@ export interface NoticeRecord {
   caseStatus: CaseStatus
   priority: "High" | "Medium" | "Low"
   expectedCompletion?: string // ISO date
+  // Offline / sync metadata
+  syncState?: "synced" | "queued"
+  createdOffline?: boolean
+  resolvedAt?: string // ISO — set when case marked Resolved
+  // QR retrieval + referral tracking. The token is a long, random, non-sequential
+  // string embedded in the QR URL (never the client's PII). The notice stays
+  // retrievable via this token until closed/cancelled.
+  retrievalToken?: string
+  trackingStatus?: TrackingStatus
+  viewedAt?: string // ISO — first time the public verification page was opened
+  acknowledgedAt?: string // ISO — when a receiving officer acknowledged the referral
+  acknowledgedByOffice?: string
+  acknowledgedByOfficer?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +383,40 @@ export function generateNoticeNumber(office = "Makindye District Office"): strin
     d.getDate(),
   ).padStart(2, "0")}`
   const seq = String(Math.floor(400 + Math.random() * 500)).padStart(5, "0")
-  return `NIRA-${code}-${stamp}-${seq}`
+  return `CR-${code}-${stamp}-${seq}`
+}
+
+/**
+ * Generate a secure, random, non-sequential retrieval token for a notice's QR
+ * code. 32 base62 characters (~190 bits) so a notice cannot be discovered by
+ * guessing notice numbers or incrementing a URL value.
+ */
+export function generateRetrievalToken(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+  const len = 32
+  let out = ""
+  if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+    const bytes = new Uint8Array(len)
+    crypto.getRandomValues(bytes)
+    for (let i = 0; i < len; i++) out += alphabet[bytes[i] % alphabet.length]
+  } else {
+    for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+  }
+  return out
+}
+
+/** Relative path to the public verification page for a retrieval token. */
+export function noticeVerifyPath(token: string): string {
+  return `/notice/${token}`
+}
+
+/**
+ * Absolute verification URL encoded into the QR. Uses the current origin at
+ * runtime so the same code works across preview/production domains.
+ */
+export function noticeVerifyUrl(token: string): string {
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  return `${origin}${noticeVerifyPath(token)}`
 }
 
 export const CURRENT_OFFICER = {
@@ -315,4 +430,481 @@ export const COMPLAINTS_CONTACTS = {
   toll: "0800 100 100",
   email: "info@nira.go.ug",
   web: "www.nira.go.ug",
+}
+
+// ---------------------------------------------------------------------------
+// Roles, districts & accounts. Three roles: district-front-line staff, NIRA
+// Headquarters staff (attached to a directorate), and national systems admin.
+// ---------------------------------------------------------------------------
+
+export type Role = "district-staff" | "hq-staff" | "systems-admin"
+
+export const ROLE_LABEL: Record<Role, string> = {
+  "district-staff": "District Staff",
+  "hq-staff": "NIRA Hqtrs Staff",
+  "systems-admin": "Systems Admin",
+}
+
+/** True for any front-line registration officer (district OR headquarters) —
+ *  i.e. everyone who issues notices, as opposed to a national systems admin. */
+export function isRegistrationStaff(role: Role | undefined | null): boolean {
+  return role === "district-staff" || role === "hq-staff"
+}
+
+export interface District {
+  id: string
+  name: string // matches the office string used on NoticeRecord.office
+  code: string
+}
+
+// Field districts (staff-assignable). Each maps 1:1 to an office string.
+// Existing four kept verbatim so previously-assigned staff/notices stay mapped;
+// the rest are the additional Central-region offices requested for assignment.
+export const DISTRICTS: District[] = [
+  { id: "makindye", name: "Makindye District Office", code: "MAK" },
+  { id: "kampala-central", name: "Kampala Central Office", code: "KLA" },
+  { id: "wakiso", name: "Wakiso District Office", code: "WAK" },
+  { id: "mukono", name: "Mukono District Office", code: "MUK" },
+  { id: "nakasongola", name: "Nakasongola District Office", code: "NSG" },
+  { id: "nakaseke", name: "Nakaseke District Office", code: "NSK" },
+  { id: "luweero", name: "Luweero District Office", code: "LUW" },
+  { id: "kawempe", name: "Kawempe District Office", code: "KAW" },
+  { id: "nakawa", name: "Nakawa District Office", code: "NAK" },
+  { id: "rubaga", name: "Rubaga District Office", code: "RUB" },
+  { id: "kayunga", name: "Kayunga District Office", code: "KAY" },
+  { id: "buvuma", name: "Buvuma District Office", code: "BUV" },
+  { id: "buikwe", name: "Buikwe District Office", code: "BUI" },
+  { id: "gomba", name: "Gomba District Office", code: "GOM" },
+  { id: "mpigi", name: "Mpigi District Office", code: "MPI" },
+  { id: "butambala", name: "Butambala District Office", code: "BUT" },
+]
+
+export function districtByName(name: string): District | undefined {
+  return DISTRICTS.find((d) => d.name === name)
+}
+
+/**
+ * NIRA Headquarters is a first-class assignable office alongside the field
+ * districts: staff can be attached to it and it can issue/refer notices. Unlike
+ * a district it cannot be a referral *destination* from itself (no HQ → HQ).
+ */
+export const HQ_OFFICE_NAME = "NIRA Headquarters"
+
+export function isHqOffice(name: string | undefined): boolean {
+  return name === HQ_OFFICE_NAME
+}
+
+/**
+ * Offices to which staff can be assigned and from which notices can be issued:
+ * every field district plus NIRA Headquarters.
+ */
+export const ASSIGNABLE_OFFICES: District[] = [
+  ...DISTRICTS,
+  { id: "hq", name: HQ_OFFICE_NAME, code: "HQ" },
+]
+
+export interface UserAccount {
+  id: string
+  name: string
+  title: string
+  role: Role
+  district: string // office/district name; "All Districts" for admin (national scope)
+  /** Required for hq-staff: the NIRA Headquarters directorate / department the
+   *  officer belongs to (one of HQ_DIRECTORATES). Unused for other roles. */
+  department?: string
+  initials: string
+  active: boolean
+  email?: string
+  /** Prototype credential (stored in plaintext; a real backend would hash it). */
+  password?: string
+  /** Forces a password change on next sign-in (true for newly-created / reset accounts). */
+  mustChangePassword?: boolean
+}
+
+export const ALL_DISTRICTS = "All Districts"
+
+/** Default password every new / reset account starts with, then must change. */
+export const DEFAULT_PASSWORD = "Welcome123"
+
+/** localStorage key for the managed account roster (shared by session + data store). */
+export const ACCOUNTS_STORAGE_KEY = "nira.accounts"
+
+/** Backfill auth fields so legacy/seed accounts always have usable credentials. */
+export function withAuthDefaults(account: UserAccount): UserAccount {
+  return {
+    ...account,
+    password: account.password ?? DEFAULT_PASSWORD,
+    mustChangePassword: account.mustChangePassword ?? false,
+  }
+}
+
+export type AuthResult =
+  | { ok: true; account: UserAccount }
+  | { ok: false; reason: "not-found" | "bad-password" | "inactive" }
+
+/** Match an email + password against the roster (case-insensitive email). */
+export function authenticate(accounts: UserAccount[], email: string, password: string): AuthResult {
+  const target = email.trim().toLowerCase()
+  const found = accounts.find((a) => (a.email ?? "").trim().toLowerCase() === target)
+  if (!found) return { ok: false, reason: "not-found" }
+  if (!found.active) return { ok: false, reason: "inactive" }
+  const expected = found.password ?? DEFAULT_PASSWORD
+  if (password !== expected) return { ok: false, reason: "bad-password" }
+  return { ok: true, account: withAuthDefaults(found) }
+}
+
+// Two demo accounts (one per role) used for quick sign-in.
+export const DEMO_ACCOUNTS: Record<"staff" | "admin", UserAccount> = {
+  staff: {
+    id: "acc-staff",
+    name: "Paul Kasawuli",
+    title: "Senior Registration Officer",
+    role: "district-staff",
+    district: "Makindye District Office",
+    initials: "PK",
+    active: true,
+    email: "p.kasawuli@nira.go.ug",
+  },
+  admin: {
+    id: "acc-admin",
+    name: "Miriam Achieng",
+    title: "Systems Administrator",
+    role: "systems-admin",
+    district: ALL_DISTRICTS,
+    initials: "MA",
+    active: true,
+    email: "m.achieng@nira.go.ug",
+  },
+}
+
+// Seed roster of officer accounts managed in the Admin panel.
+export const SEED_ACCOUNTS: UserAccount[] = [
+  DEMO_ACCOUNTS.admin,
+  DEMO_ACCOUNTS.staff,
+  {
+    id: "acc-2",
+    name: "Grace Nabbosa",
+    title: "Registration Officer",
+    role: "district-staff",
+    district: "Makindye District Office",
+    initials: "GN",
+    active: true,
+    email: "g.nabbosa@nira.go.ug",
+  },
+  {
+    id: "acc-3",
+    name: "John Okello",
+    title: "Registration Officer",
+    role: "district-staff",
+    district: "Kampala Central Office",
+    initials: "JO",
+    active: true,
+    email: "j.okello@nira.go.ug",
+  },
+  {
+    id: "acc-4",
+    name: "Amina Namusoke",
+    title: "Senior Registration Officer",
+    role: "district-staff",
+    district: "Wakiso District Office",
+    initials: "AN",
+    active: true,
+    email: "a.namusoke@nira.go.ug",
+  },
+  {
+    id: "acc-5",
+    name: "Peter Ochieng",
+    title: "Registration Assistant",
+    role: "district-staff",
+    district: "Mukono District Office",
+    initials: "PO",
+    active: false,
+    email: "p.ochieng@nira.go.ug",
+  },
+  {
+    id: "acc-6",
+    name: "Sarah Kirabo",
+    title: "Registration Officer",
+    role: "hq-staff",
+    district: HQ_OFFICE_NAME,
+    department: "BDAR",
+    initials: "SK",
+    active: true,
+    email: "s.kirabo@nira.go.ug",
+  },
+]
+
+// Delivery-channel availability, controlled by Systems Admin.
+export interface DeliveryChannelSettings {
+  sms: boolean
+  email: boolean
+  print: boolean
+}
+
+export const DEFAULT_CHANNEL_SETTINGS: DeliveryChannelSettings = {
+  // No SMS gateway is connected yet, so the SMS channel starts disabled. The
+  // delivery-method picker still shows an SMS tile, but it renders faded and
+  // cannot be selected until a gateway is wired up.
+  sms: false,
+  email: true,
+  print: true,
+}
+
+// ---------------------------------------------------------------------------
+// Referral master data — centrally maintained so office names and department
+// contacts can change without altering the form or historic referral records.
+// ---------------------------------------------------------------------------
+
+/** Domain used to compose official department addresses. */
+export const NIRA_EMAIL_DOMAIN = "nira.go.ug"
+
+export type ReferralLocationType = "DISTRICT_OFFICE" | "HEADQUARTERS" | "OTHER"
+
+/** Where a National ID card is physically held for a collection referral. */
+export type CardLocationType = "DISTRICT_OFFICE" | "LOCAL_OUTREACH"
+
+export interface ReferralLocation {
+  id: string
+  type: ReferralLocationType
+  name: string
+  region: string
+  active: boolean
+  /** Deprecated for districts: office emails are entered as free text per
+   *  referral, never stored in master data. Kept optional for compatibility. */
+  email?: string
+}
+
+/**
+ * Master list of Uganda district offices a client can be referred to, grouped by
+ * the six NIRA administrative regions. Built from a name+region seed so the full
+ * national list stays maintainable; each entry gets a stable id (stored on the
+ * referral so display names can change later without affecting past records).
+ * Office emails are entered per referral as free text, not stored here.
+ */
+const UGANDA_DISTRICT_SEED: ReadonlyArray<{ name: string; region: string }> = [
+  // Central
+  { name: "Kampala Central", region: "Central" },
+  { name: "Kawempe", region: "Central" },
+  { name: "Makindye", region: "Central" },
+  { name: "Rubaga", region: "Central" },
+  { name: "Nakawa", region: "Central" },
+  { name: "Wakiso", region: "Central" },
+  { name: "Mukono", region: "Central" },
+  { name: "Luweero", region: "Central" },
+  { name: "Buikwe", region: "Central" },
+  { name: "Nakasongola", region: "Central" },
+  { name: "Gomba", region: "Central" },
+  { name: "Butambala", region: "Central" },
+  { name: "Kayunga", region: "Central" },
+  { name: "Mpigi", region: "Central" },
+  { name: "Nakaseke", region: "Central" },
+  { name: "Buvuma", region: "Central" },
+  // Mid Western
+  { name: "Kasese", region: "Mid Western" },
+  { name: "Mubende", region: "Mid Western" },
+  { name: "Kasanda", region: "Mid Western" },
+  { name: "Hoima", region: "Mid Western" },
+  { name: "Kikuube", region: "Mid Western" },
+  { name: "Kibaale", region: "Mid Western" },
+  { name: "Kabarole", region: "Mid Western" },
+  { name: "Bunyangabu", region: "Mid Western" },
+  { name: "Kyenjojo", region: "Mid Western" },
+  { name: "Mityana", region: "Mid Western" },
+  { name: "Kyegegwa", region: "Mid Western" },
+  { name: "Kamwenge", region: "Mid Western" },
+  { name: "Kitagwenda", region: "Mid Western" },
+  { name: "Kiryandongo", region: "Mid Western" },
+  { name: "Masindi", region: "Mid Western" },
+  { name: "Kyankwanzi", region: "Mid Western" },
+  { name: "Kagadi", region: "Mid Western" },
+  { name: "Kiboga", region: "Mid Western" },
+  { name: "Kakumiro", region: "Mid Western" },
+  { name: "Buliisa", region: "Mid Western" },
+  { name: "Ntoroko", region: "Mid Western" },
+  { name: "Ibanda", region: "Mid Western" },
+  { name: "Bundibugyo", region: "Mid Western" },
+  // Eastern
+  { name: "Iganga", region: "Eastern" },
+  { name: "Jinja", region: "Eastern" },
+  { name: "Mbale", region: "Eastern" },
+  { name: "Tororo", region: "Eastern" },
+  { name: "Mayuge", region: "Eastern" },
+  { name: "Kamuli", region: "Eastern" },
+  { name: "Bugiri", region: "Eastern" },
+  { name: "Pallisa", region: "Eastern" },
+  { name: "Busia", region: "Eastern" },
+  { name: "Manafwa", region: "Eastern" },
+  { name: "Sironko", region: "Eastern" },
+  { name: "Buyende", region: "Eastern" },
+  { name: "Namayingo", region: "Eastern" },
+  { name: "Kaliro", region: "Eastern" },
+  { name: "Luuka", region: "Eastern" },
+  { name: "Budaka", region: "Eastern" },
+  { name: "Kibuku", region: "Eastern" },
+  { name: "Butaleja", region: "Eastern" },
+  { name: "Namutumba", region: "Eastern" },
+  { name: "Namisindwa", region: "Eastern" },
+  { name: "Butebo", region: "Eastern" },
+  { name: "Bugweri", region: "Eastern" },
+  { name: "Bulambuli", region: "Eastern" },
+  { name: "Bududa", region: "Eastern" },
+  { name: "Kapchorwa", region: "Eastern" },
+  { name: "Bukwo", region: "Eastern" },
+  { name: "Kween", region: "Eastern" },
+  // Western
+  { name: "Mbarara", region: "Western" },
+  { name: "Ntungamo", region: "Western" },
+  { name: "Kabale", region: "Western" },
+  { name: "Rakai", region: "Western" },
+  { name: "Kyotera", region: "Western" },
+  { name: "Isingiro", region: "Western" },
+  { name: "Masaka", region: "Western" },
+  { name: "Kisoro", region: "Western" },
+  { name: "Lwengo", region: "Western" },
+  { name: "Rukungiri", region: "Western" },
+  { name: "Kiruhura", region: "Western" },
+  { name: "Kazo", region: "Western" },
+  { name: "Kanungu", region: "Western" },
+  { name: "Ssembabule", region: "Western" },
+  { name: "Bushenyi", region: "Western" },
+  { name: "Mitooma", region: "Western" },
+  { name: "Sheema", region: "Western" },
+  { name: "Kalungu", region: "Western" },
+  { name: "Rubanda", region: "Western" },
+  { name: "Rukiga", region: "Western" },
+  { name: "Bukomansimbi", region: "Western" },
+  { name: "Rubirizi", region: "Western" },
+  { name: "Buhweju", region: "Western" },
+  { name: "Lyantonde", region: "Western" },
+  { name: "Rwampara", region: "Western" },
+  { name: "Kalangala", region: "Western" },
+  // North Eastern
+  { name: "Abim", region: "North Eastern" },
+  { name: "Serere", region: "North Eastern" },
+  { name: "Soroti", region: "North Eastern" },
+  { name: "Kumi", region: "North Eastern" },
+  { name: "Amuria", region: "North Eastern" },
+  { name: "Alebtong", region: "North Eastern" },
+  { name: "Kaberamaido", region: "North Eastern" },
+  { name: "Bukedea", region: "North Eastern" },
+  { name: "Katakwi", region: "North Eastern" },
+  { name: "Dokolo", region: "North Eastern" },
+  { name: "Agago", region: "North Eastern" },
+  { name: "Ngora", region: "North Eastern" },
+  { name: "Amolatar", region: "North Eastern" },
+  { name: "Kalaki", region: "North Eastern" },
+  { name: "Kotido", region: "North Eastern" },
+  { name: "Kaabong", region: "North Eastern" },
+  { name: "Nakapiripirit", region: "North Eastern" },
+  { name: "Otuke", region: "North Eastern" },
+  { name: "Karenga", region: "North Eastern" },
+  { name: "Napak", region: "North Eastern" },
+  { name: "Kapelebyong", region: "North Eastern" },
+  { name: "Moroto", region: "North Eastern" },
+  { name: "Amudat", region: "North Eastern" },
+  { name: "Nabilatuk", region: "North Eastern" },
+  // North Western
+  { name: "Apac", region: "North Western" },
+  { name: "Kwania", region: "North Western" },
+  { name: "Oyam", region: "North Western" },
+  { name: "Arua", region: "North Western" },
+  { name: "Madi-Okollo", region: "North Western" },
+  { name: "Terego", region: "North Western" },
+  { name: "Nebbi", region: "North Western" },
+  { name: "Pakwach", region: "North Western" },
+  { name: "Lira", region: "North Western" },
+  { name: "Gulu", region: "North Western" },
+  { name: "Yumbe", region: "North Western" },
+  { name: "Zombo", region: "North Western" },
+  { name: "Koboko", region: "North Western" },
+  { name: "Maracha", region: "North Western" },
+  { name: "Kitgum", region: "North Western" },
+  { name: "Adjumani", region: "North Western" },
+  { name: "Pader", region: "North Western" },
+  { name: "Amuru", region: "North Western" },
+  { name: "Lamwo", region: "North Western" },
+  { name: "Moyo", region: "North Western" },
+  { name: "Obongi", region: "North Western" },
+  { name: "Nwoya", region: "North Western" },
+  { name: "Omoro", region: "North Western" },
+  { name: "Kole", region: "North Western" },
+]
+
+const officeSlug = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+// District office emails are NOT hardcoded here: the officer enters the
+// receiving office email as free text at referral time (see
+// ReferralDestinationFields / CardLocationFields).
+export const REFERRAL_LOCATIONS: ReferralLocation[] = UGANDA_DISTRICT_SEED.map((d) => ({
+  id: `loc-${officeSlug(d.name)}`,
+  type: "DISTRICT_OFFICE",
+  name: d.name,
+  region: d.region,
+  active: true,
+}))
+
+export function referralLocationById(id: string | undefined): ReferralLocation | undefined {
+  if (!id) return undefined
+  return REFERRAL_LOCATIONS.find((l) => l.id === id)
+}
+
+export interface HeadquartersDepartment {
+  id: string
+  name: string
+  email: string
+  active: boolean
+}
+
+/**
+ * Configurable Headquarters directorates/departments/sections. These serve two
+ * purposes with one canonical list: (1) the sections a HQ officer can be
+ * attached to, and (2) the sections a client can be referred to at HQ.
+ * Existing ids (legal / client-relations / bdar) are kept stable so historic
+ * referral records keep resolving; names are the short official forms.
+ * Additional departments can be appended here without changing any front-end code.
+ */
+export const HQ_DEPARTMENTS: HeadquartersDepartment[] = [
+  { id: "dept-bdar", name: "BDAR", email: `bdar@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-client-relations", name: "Client Relations", email: `clientrelations@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-general", name: "General", email: `general@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-identification-services", name: "Identification Services", email: `identification@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-legal", name: "Legal", email: `legal@${NIRA_EMAIL_DOMAIN}`, active: true },
+  { id: "dept-marriages", name: "Marriages", email: `marriages@${NIRA_EMAIL_DOMAIN}`, active: true },
+]
+
+export function hqDepartmentById(id: string | undefined): HeadquartersDepartment | undefined {
+  if (!id) return undefined
+  return HQ_DEPARTMENTS.find((d) => d.id === id)
+}
+
+/**
+ * Directorate/department names a HQ-assigned officer must be attached to. Drawn
+ * from the same canonical HQ list so assignment and referral stay in sync.
+ */
+export const HQ_DIRECTORATES: string[] = HQ_DEPARTMENTS.map((d) => d.name)
+
+export type ReferralEmailStatus = "not-required" | "pending" | "sent" | "failed"
+
+/**
+ * Produces the exact, precise referral destination label for a notice — never
+ * the vague category on its own when a specific office/department is captured.
+ */
+export function referralDestinationLabel(n: {
+  destination: string
+  referralOfficeId?: string
+  referralDepartmentId?: string
+}): string {
+  if (n.destination === REFERRAL_DISTRICT_DESTINATION) {
+    const loc = referralLocationById(n.referralOfficeId)
+    return loc ? `NIRA – ${loc.name} District Office` : n.destination
+  }
+  if (n.destination === REFERRAL_HQ_DESTINATION) {
+    const dept = hqDepartmentById(n.referralDepartmentId)
+    return dept ? `NIRA Headquarters – ${dept.name}` : n.destination
+  }
+  return n.destination
 }

@@ -5,8 +5,8 @@ import { NiraLogo } from "@/components/nira-logo"
 import { LoginForm } from "@/components/login/login-form"
 
 export const metadata: Metadata = {
-  title: "Sign in | NIRA Client Services Outcome Notice System",
-  description: "Secure staff sign-in for the NIRA Client Services Outcome Notice System.",
+  title: "Sign in | Central Region Client Services Outcome Notice System",
+  description: "Secure staff sign-in for the Central Region Client Services Outcome Notice System.",
 }
 
 const highlights = [
@@ -35,8 +35,8 @@ export default function LoginPage() {
         <div className="flex items-center gap-3">
           <NiraLogo variant="light" />
           <div className="leading-tight">
-            <p className="text-sm font-semibold text-sidebar-primary-foreground">NIRA</p>
-            <p className="text-xs text-sidebar-foreground/70">National Identification &amp; Registration Authority</p>
+            <p className="text-sm font-semibold text-sidebar-primary-foreground">Central Region</p>
+            <p className="text-xs text-sidebar-foreground/70">Pilot / Study System</p>
           </div>
         </div>
 
@@ -77,7 +77,7 @@ export default function LoginPage() {
           <div className="flex flex-col gap-2">
             <h2 className="font-serif text-2xl font-semibold text-foreground">Sign in to your account</h2>
             <p className="text-sm text-muted-foreground">
-              Enter your NIRA staff credentials to access the notice system.
+              Enter your staff credentials to access the notice system.
             </p>
           </div>
           <LoginForm />

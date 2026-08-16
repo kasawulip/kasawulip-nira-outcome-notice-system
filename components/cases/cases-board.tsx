@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import Link from "next/link"
 import { AlertTriangle, Clock, ArrowUpRight, CheckCircle2, Phone, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
@@ -13,7 +13,7 @@ import { StatCard } from "@/components/stat-card"
 import { CaseStatusBadge, PriorityBadge } from "@/components/status-badge"
 import { ServiceIcon } from "@/components/service-icon"
 import { serviceName, formatDate, type NoticeRecord, type CaseStatus } from "@/lib/nira"
-import { MOCK_NOTICES } from "@/lib/mock-notices"
+import { useDataStore, useScopedNotices } from "@/components/data-store-context"
 
 const ACTION_STATUSES: CaseStatus[] = [
   "Awaiting Client Action",
@@ -69,12 +69,17 @@ function CaseRow({ notice, onResolve }: { notice: NoticeRecord; onResolve: (id: 
           </div>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2 self-end sm:self-center">
-        <Button variant="outline" size="sm" onClick={() => toast.info(`Calling ${notice.clientName}`)}>
+      <div className="flex shrink-0 items-center gap-2 self-stretch sm:self-center">
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1 sm:flex-none"
+          onClick={() => toast.info(`Calling ${notice.clientName}`, { description: notice.phone })}
+        >
           <Phone data-icon="inline-start" />
           Contact
         </Button>
-        <Button size="sm" onClick={() => onResolve(notice.id)}>
+        <Button size="sm" className="flex-1 sm:flex-none" onClick={() => onResolve(notice.id)}>
           <CheckCircle2 data-icon="inline-start" />
           Resolve
         </Button>
@@ -84,16 +89,18 @@ function CaseRow({ notice, onResolve }: { notice: NoticeRecord; onResolve: (id: 
 }
 
 export function CasesBoard() {
-  const [resolved, setResolved] = useState<string[]>([])
+  const scoped = useScopedNotices()
+  const { resolveCase } = useDataStore()
 
   const cases = useMemo(
-    () => MOCK_NOTICES.filter((n) => ACTION_STATUSES.includes(n.caseStatus) && !resolved.includes(n.id)),
-    [resolved],
+    () => scoped.filter((n) => ACTION_STATUSES.includes(n.caseStatus)),
+    [scoped],
   )
 
   const handleResolve = (id: string) => {
-    setResolved((prev) => [...prev, id])
-    toast.success("Case marked as resolved")
+    const c = cases.find((n) => n.id === id)
+    resolveCase(id)
+    toast.success("Case marked as resolved", { description: c?.clientName })
   }
 
   const overdue = cases.filter((n) => {
@@ -107,7 +114,7 @@ export function CasesBoard() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Open cases" value={cases.length} icon={AlertTriangle} tone="default" />
         <StatCard label="High priority" value={high} icon={ArrowUpRight} tone="danger" />
         <StatCard label="Overdue" value={overdue} icon={Clock} tone="warning" />

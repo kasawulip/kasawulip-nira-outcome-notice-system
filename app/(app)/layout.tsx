@@ -1,18 +1,13 @@
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
-import { AppHeader } from "@/components/app-header"
 import { NetworkProvider } from "@/components/network-context"
+import { DataStoreProvider } from "@/components/data-store-context"
+import { AppShell } from "@/components/app-shell"
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <NetworkProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset className="min-w-0">
-          <AppHeader />
-          <div className="min-w-0 flex-1">{children}</div>
-        </SidebarInset>
-      </SidebarProvider>
+      <DataStoreProvider>
+        <AppShell>{children}</AppShell>
+      </DataStoreProvider>
     </NetworkProvider>
   )
 }

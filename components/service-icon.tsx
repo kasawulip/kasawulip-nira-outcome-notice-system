@@ -14,6 +14,7 @@ import {
   FileText,
   type LucideIcon,
 } from "lucide-react"
+import { serviceIcon, type ServiceId } from "@/lib/nira"
 
 const ICONS: Record<string, LucideIcon> = {
   "id-card": IdCard,
@@ -32,11 +33,16 @@ const ICONS: Record<string, LucideIcon> = {
 
 export function ServiceIcon({
   name,
+  service,
   className,
 }: {
-  name: string
+  /** Direct lucide icon key. */
+  name?: string
+  /** Service id — the icon key is resolved automatically. */
+  service?: ServiceId
   className?: string
 }) {
-  const Icon = ICONS[name] ?? FileText
+  const key = name ?? (service ? serviceIcon(service) : undefined)
+  const Icon = (key && ICONS[key]) || FileText
   return <Icon className={className} aria-hidden="true" />
 }

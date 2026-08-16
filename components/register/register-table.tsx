@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Search, SlidersHorizontal, ArrowUpDown, Download } from "lucide-react"
+import { Search, SlidersHorizontal, ArrowUpDown, Download, CloudOff, ChevronRight } from "lucide-react"
+import { toast } from "sonner"
 
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group"
 import { Button } from "@/components/ui/button"
@@ -33,6 +34,7 @@ import {
   type NoticeRecord,
   type DeliveryStatus,
 } from "@/lib/nira"
+import { noticesToCsv, downloadTextFile, timestampSlug } from "@/lib/export-csv"
 
 type SortKey = "dateTime" | "clientName" | "service"
 
@@ -79,12 +81,29 @@ export function RegisterTable({ notices }: { notices: NoticeRecord[] }) {
     }
   }
 
+  function handleExport() {
+    if (filtered.length === 0) {
+      toast.error("Nothing to export with the current filters.")
+      return
+    }
+    downloadTextFile(`nira-register-${timestampSlug()}.csv`, noticesToCsv(filtered))
+    toast.success(`Exported ${filtered.length} notice${filtered.length === 1 ? "" : "s"} to CSV.`)
+  }
+
   const hasFilters = query !== "" || service !== "all" || delivery !== "all" || caseStatus !== "all"
+
+  function clearFilters() {
+    setQuery("")
+    setService("all")
+    setDelivery("all")
+    setCaseStatus("all")
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="w-full lg:max-w-md">
+      {/* Search + filters. On phones the search is full-width and filters wrap. */}
+      <div className="flex flex-col gap-3">
+        <div className="w-full">
           <InputGroup>
             <InputGroupAddon>
               <Search />
@@ -98,8 +117,8 @@ export function RegisterTable({ notices }: { notices: NoticeRecord[] }) {
           </InputGroup>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={service} onValueChange={setService}>
-            <SelectTrigger className="w-[180px]" aria-label="Filter by service">
+          <Select value={service} onValueChange={(v) => setService(v ?? "all")}>
+            <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[170px]" aria-label="Filter by service">
               <SelectValue placeholder="Service" />
             </SelectTrigger>
             <SelectContent>
@@ -111,8 +130,8 @@ export function RegisterTable({ notices }: { notices: NoticeRecord[] }) {
               ))}
             </SelectContent>
           </Select>
-          <Select value={delivery} onValueChange={setDelivery}>
-            <SelectTrigger className="w-[150px]" aria-label="Filter by delivery status">
+          <Select value={delivery} onValueChange={(v) => setDelivery(v ?? "all")}>
+            <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[140px]" aria-label="Filter by delivery status">
               <SelectValue placeholder="Delivery" />
             </SelectTrigger>
             <SelectContent>
@@ -124,8 +143,8 @@ export function RegisterTable({ notices }: { notices: NoticeRecord[] }) {
               ))}
             </SelectContent>
           </Select>
-          <Select value={caseStatus} onValueChange={setCaseStatus}>
-            <SelectTrigger className="w-[180px]" aria-label="Filter by case status">
+          <Select value={caseStatus} onValueChange={(v) => setCaseStatus(v ?? "all")}>
+            <SelectTrigger className="w-[calc(50%-0.25rem)] sm:w-[170px]" aria-label="Filter by case status">
               <SelectValue placeholder="Case status" />
             </SelectTrigger>
             <SelectContent>
@@ -137,9 +156,9 @@ export function RegisterTable({ notices }: { notices: NoticeRecord[] }) {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport} className="w-[calc(50%-0.25rem)] sm:w-auto">
             <Download data-icon="inline-start" />
-            Export
+            Export CSV
           </Button>
         </div>
       </div>
@@ -149,22 +168,54 @@ export function RegisterTable({ notices }: { notices: NoticeRecord[] }) {
           Showing <span className="font-medium text-foreground">{filtered.length}</span> of {notices.length} notices
         </span>
         {hasFilters ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setQuery("")
-              setService("all")
-              setDelivery("all")
-              setCaseStatus("all")
-            }}
-          >
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
             Clear filters
           </Button>
         ) : null}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      {/* Mobile / tablet: stacked cards. */}
+      <div className="flex flex-col gap-3 lg:hidden">
+        {filtered.map((n) => (
+          <Link
+            key={n.id}
+            href={`/register/${n.id}`}
+            className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 active:bg-muted/60"
+          >
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+              <ServiceIcon service={n.service} className="size-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate font-medium text-foreground">{n.clientName}</span>
+                {n.syncState === "queued" ? (
+                  <CloudOff className="size-3.5 shrink-0 text-warning" aria-label="Queued offline" />
+                ) : null}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">{serviceName(n.service)}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <CaseStatusBadge status={n.caseStatus} />
+                <span className="text-[11px] text-muted-foreground">{formatDateTime(n.dateTime)}</span>
+              </div>
+            </div>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          </Link>
+        ))}
+        {filtered.length === 0 ? (
+          <Empty className="rounded-lg border border-border bg-card">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <SlidersHorizontal />
+              </EmptyMedia>
+              <EmptyTitle>No matching notices</EmptyTitle>
+              <EmptyDescription>Adjust your search or filters to see results.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : null}
+      </div>
+
+      {/* Desktop: data table. */}
+      <div className="hidden overflow-x-auto rounded-lg border border-border bg-card lg:block">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
@@ -203,7 +254,12 @@ export function RegisterTable({ notices }: { notices: NoticeRecord[] }) {
                 </TableCell>
                 <TableCell>
                   <Link href={`/register/${n.id}`} className="block">
-                    <span className="font-medium text-foreground">{n.clientName}</span>
+                    <span className="flex items-center gap-1.5 font-medium text-foreground">
+                      {n.clientName}
+                      {n.syncState === "queued" ? (
+                        <CloudOff className="size-3.5 text-warning" aria-label="Queued offline" />
+                      ) : null}
+                    </span>
                     <span className="block text-xs text-muted-foreground">{maskNin(n.nin)}</span>
                   </Link>
                 </TableCell>

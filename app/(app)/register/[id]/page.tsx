@@ -1,32 +1,50 @@
-import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+"use client"
 
+import { use } from "react"
+import Link from "next/link"
+import { ArrowLeft, SearchX } from "lucide-react"
+
+import { buttonVariants } from "@/components/ui/button"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { NoticeDetail } from "@/components/register/notice-detail"
-import { MOCK_NOTICES } from "@/lib/mock-notices"
+import { useScopedNotices } from "@/components/data-store-context"
 
-export function generateStaticParams() {
-  return MOCK_NOTICES.map((n) => ({ id: n.id }))
-}
+export default function NoticeDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const notices = useScopedNotices()
+  const notice = notices.find((n) => n.id === id)
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}): Promise<Metadata> {
-  const { id } = await params
-  const notice = MOCK_NOTICES.find((n) => n.id === id)
-  return {
-    title: notice ? `${notice.clientName} · ${notice.noticeNumber} | NIRA` : "Notice | NIRA",
+  if (!notice) {
+    return (
+      <div className="flex flex-col gap-6 p-4 md:p-6">
+        <Link
+          href="/register"
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          Back to register
+        </Link>
+        <Empty className="rounded-lg border border-border bg-card py-16">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchX />
+            </EmptyMedia>
+            <EmptyTitle>Notice not found</EmptyTitle>
+            <EmptyDescription>
+              This notice does not exist, or it belongs to a district outside your access.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Link href="/register" className={buttonVariants({ variant: "outline", className: "mt-2" })}>
+            Return to register
+          </Link>
+        </Empty>
+      </div>
+    )
   }
-}
 
-export default async function NoticeDetailPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
-  const { id } = await params
-  const notice = MOCK_NOTICES.find((n) => n.id === id)
-  if (!notice) notFound()
-  return <NoticeDetail notice={notice} />
+  return (
+    <div className="p-4 md:p-6">
+      <NoticeDetail notice={notice} />
+    </div>
+  )
 }
